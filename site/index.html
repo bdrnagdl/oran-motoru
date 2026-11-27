@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oran Arama Motoru</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE work tool, sporty but exact
+   IDEA a stadium scoreboard: the pitch band holds the odds you enter, the board shows how such matches ended
+   PICTURE the 3x3 HT/FT board, each cell a lit panel sized by its share
+   COLOUR pitch green ground band, chalk white, scoreboard ink, one coral accent for the top outcome
+   TYPE Barlow Condensed for figures and titles + Barlow for text
+   LAYOUT laptop: green band with title and inputs across the top, board left with 1X2 bars right; phone: stacked */
+:root{color-scheme:light dark;--bg:light-dark(#ffffff,#0c1510);--ink:light-dark(#0f1a14,#e8efe9);--mut:light-dark(#5b6b61,#93a399);--line:light-dark(#dfe6e1,#22322a);--pitch:light-dark(#0f6b3a,#0b4a29);--pitch2:light-dark(#127a43,#0e5630);--chalk:#ffffff;--acc:#ff5a3c;--cell:light-dark(#eef4f0,#14211a);--panel:light-dark(#f6f9f7,#111c16)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 Barlow,system-ui,sans-serif;overflow-x:clip}
+.band{padding-block:clamp(22px,3.5vw,44px);padding-inline:max(5vw,16px)}
+.wrap{max-width:1240px;margin:0 auto}
+.pitch{background:repeating-linear-gradient(90deg,var(--pitch) 0 80px,var(--pitch2) 80px 160px);color:var(--chalk)}
+h1{font:700 clamp(32px,5vw,50px)/1.05 "Barlow Condensed",sans-serif;letter-spacing:-.01em;margin:0 0 4px}
+.sub{margin:0 0 18px;opacity:.9;max-width:62ch}
+.inputs{display:grid;grid-template-columns:repeat(3,minmax(0,8.5em)) minmax(0,1fr);gap:12px;align-items:end}
+.odd label,.tol label,.flt label{display:block;font-size:14px;font-weight:600;margin-bottom:4px}
+.odd input{width:100%;height:58px;border:2px solid rgba(255,255,255,.55);border-radius:10px;background:rgba(0,0,0,.18);color:#fff;font:700 30px "Barlow Condensed",sans-serif;text-align:center}
+.odd input:focus,select:focus,button:focus-visible,input[type=range]:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.tol{padding:6px 4px}
+.tol output{font:700 26px "Barlow Condensed",sans-serif;margin-left:6px}
+input[type=range]{width:100%;accent-color:var(--acc);height:32px}
+.filters{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}
+.flt select{height:44px;border-radius:8px;border:1px solid rgba(255,255,255,.55);background:rgba(0,0,0,.22);color:#fff;font:16px Barlow,sans-serif;padding:0 10px;max-width:100%}
+.flt select option{color:#111}
+.chk{display:flex;align-items:center;gap:8px;font-size:15px;min-height:44px;align-self:end}
+.chk input{width:20px;height:20px;accent-color:var(--acc)}
+.head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;margin-bottom:14px}
+.big{font:700 clamp(40px,6vw,64px)/1 "Barlow Condensed",sans-serif;white-space:nowrap}
+.note{color:var(--mut);font-size:15px}
+.warn{color:var(--acc);font-weight:600}
+.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:28px}
+.board{display:grid;grid-template-columns:3.2em repeat(3,minmax(0,1fr));gap:6px}
+.board .lab{display:flex;align-items:center;justify-content:center;font:700 18px "Barlow Condensed",sans-serif;color:var(--mut)}
+.cellx{position:relative;background:var(--cell);border-radius:10px;padding:12px 10px 10px;min-height:96px;overflow:hidden}
+.cellx .fill{position:absolute;left:0;bottom:0;right:0;background:color-mix(in srgb,var(--pitch) 30%,transparent)}
+.cellx.top .fill{background:color-mix(in srgb,var(--acc) 34%,transparent)}
+.cellx b,.cellx span,.cellx i{position:relative;display:block}
+.cellx i{font:600 15px "Barlow Condensed",sans-serif;font-style:normal;color:var(--mut)}
+.cellx b{font:700 clamp(26px,3.4vw,38px)/1.05 "Barlow Condensed",sans-serif;white-space:nowrap}
+.cellx span{font-size:14px;color:var(--mut);white-space:nowrap}
+h2{font:700 26px/1.1 "Barlow Condensed",sans-serif;margin:0 0 10px}
+.bars{display:grid;gap:10px}
+.bar{display:grid;grid-template-columns:5.4em minmax(0,1fr) 4.4em;align-items:center;gap:10px}
+.bar .t{height:30px;background:var(--cell);border-radius:6px;overflow:hidden}
+.bar .t div{height:100%;background:var(--pitch)}
+.bar.top .t div{background:var(--acc)}
+.bar .v{text-align:right;font:700 20px "Barlow Condensed",sans-serif;white-space:nowrap}
+.bar .k{font-weight:600}
+.side{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.side+.side{margin-top:14px}
+.fair{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;text-align:center}
+.fair b{display:block;font:700 22px "Barlow Condensed",sans-serif}
+.fair span{font-size:13px;color:var(--mut)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th{text-align:left;font-weight:600;color:var(--mut);border-bottom:2px solid var(--line);padding:8px 6px;white-space:nowrap}
+td{border-bottom:1px solid var(--line);padding:8px 6px;vertical-align:top}
+td.n,th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+td.d{white-space:nowrap;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;padding:1px 7px;border-radius:5px;background:var(--cell);font:600 14px "Barlow Condensed",sans-serif;white-space:nowrap}
+.more{margin-top:14px;height:44px;padding:0 18px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:600 16px Barlow,sans-serif;cursor:pointer}
+.more:hover{border-color:var(--pitch)}
+.empty{padding:28px;text-align:center;color:var(--mut);background:var(--panel);border-radius:12px}
+.jump{display:inline-block;margin-left:6px;padding:4px 12px;border-radius:999px;background:#fff;color:var(--pitch);font-weight:600;text-decoration:none;white-space:nowrap}
+.kup{background:var(--panel);border-top:1px solid var(--line)}
+.kt{font-size:clamp(30px,4vw,42px);margin-bottom:4px}
+.warnbox{border-left:4px solid var(--acc);background:color-mix(in srgb,var(--acc) 10%,transparent);padding:10px 14px;border-radius:6px;font-weight:500}
+.kgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:14px;align-items:start}
+.kart{background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.kart header{padding:12px 16px;background:var(--pitch);color:#fff}
+.kart.s header{background:#b8402a}.kart.y header{background:#1f3b2c}
+.kart h3{margin:0;font:700 26px/1.1 "Barlow Condensed",sans-serif}
+.kart header p{margin:2px 0 0;font-size:14px;opacity:.9}
+.sec{padding:10px 16px;border-bottom:1px solid var(--line)}
+.sec .r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:baseline}
+.sec .m{font-weight:600}
+.sec .o{font:700 22px "Barlow Condensed",sans-serif;white-space:nowrap}
+.sec .i{font-size:14px;color:var(--mut)}
+.sec .pk{display:inline-block;margin-top:2px;padding:1px 8px;border-radius:5px;background:var(--cell);font:600 15px "Barlow Condensed",sans-serif}
+.sec details{margin-top:6px;font-size:14px}
+.sec summary{cursor:pointer;color:var(--pitch);font-weight:600;min-height:28px}
+.sec details p{margin:6px 0 0}
+.tot{padding:12px 16px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.tot b{display:block;font:700 26px "Barlow Condensed",sans-serif}
+.tot span{font-size:13px;color:var(--mut)}
+.knote{padding:0 16px 14px;font-size:14px;color:var(--mut);margin:0}
+.st{width:100%;font-size:14px}.st td,.st th{padding:5px 6px}
+@media(max-width:980px){.kgrid{grid-template-columns:minmax(0,1fr)}}
+.yasal{background:#14211a;color:#f3f6f4;font-size:14px;line-height:1.45;padding:8px max(5vw,16px);text-align:center}
+footer{color:var(--mut);font-size:14px;border-top:1px solid var(--line)}
+@media(max-width:820px){.grid2{grid-template-columns:minmax(0,1fr)}.inputs{grid-template-columns:repeat(3,minmax(0,1fr))}.tol{grid-column:1/-1}}
+@media(max-width:600px){.cellx{min-height:80px;padding:8px}table{font-size:13px}th,td{padding:6px 4px}.stack thead{display:none}.stack tr{display:grid;padding-block:10px;border-bottom:1px solid var(--line)}.stack td{display:flex;justify-content:space-between;gap:12px;border:0;padding:2px 0;text-align:right}.stack td::before{content:attr(data-l);color:var(--mut);text-align:left}}
+</style>
+<script>new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true})</script>
+</head>
+<body>
+<div class="yasal" role="note"><b>Bu bir tahmin sitesidir.</b> Gösterilen sonuçlar geçmiş maçlardan hesaplanan olasılıklardır, kesinlik vermez. <b>Yasa dışı bahis suçtur.</b> 18 yaşından küçükler bahis oynayamaz.</div>
+<header class="band pitch">
+ <div class="wrap">
+  <h1>Oran Arama Motoru</h1>
+  <p class="sub">Maçın 1-X-2 kapanış oranlarını gir, geçmişte aynı oranla oynanmış maçların nasıl bittiğini gör. <a class="jump" href="#kuponlar">Günün kuponlarına git</a></p>
+  <form id="f" class="inputs" autocomplete="off">
+   <div class="odd"><label for="o1">1 (Ev)</label><input id="o1" inputmode="decimal" value="2.10"></div>
+   <div class="odd"><label for="ox">X (Beraberlik)</label><input id="ox" inputmode="decimal" value="3.40"></div>
+   <div class="odd"><label for="o2">2 (Deplasman)</label><input id="o2" inputmode="decimal" value="3.50"></div>
+   <div class="tol"><label for="tol">Yakınlık: her oran ± <output id="tolv">0.05</output></label><input id="tol" type="range" min="0" max="0.30" step="0.01" value="0.05"></div>
+  </form>
+  <div class="filters">
+   <div class="flt"><label for="lig">Lig</label><select id="lig"></select></div>
+   <div class="flt"><label for="yil">Dönem</label><select id="yil"><option value="0">Tüm sezonlar (2019'dan beri)</option><option value="2022">2022 ve sonrası</option><option value="2024">2024 ve sonrası</option></select></div>
+   <label class="chk"><input type="checkbox" id="htonly"> Sadece İY skoru olan maçlar</label>
+  </div>
+ </div>
+</header>
+
+
+<main>
+ <section class="band"><div class="wrap">
+  <div class="head"><span class="big" id="cnt">…</span><span class="note" id="cntt">Veri yükleniyor…</span></div>
+  <div class="grid2">
+   <div>
+    <h2>İlk yarı / Maç sonu</h2>
+    <div class="board" id="board"></div>
+    <p class="note" id="bnote"></p>
+   </div>
+   <div>
+    <div class="side"><h2>Maç sonucu</h2><div class="bars" id="bars"></div></div>
+    <div class="side"><h2>Oranların söylediği</h2><div class="fair" id="fair"></div><p class="note" style="margin:10px 0 0">Girdiğin oranlardan büro payı çıkarılınca kalan olasılıklar. Yukarıdaki gerçek sonuçlarla karşılaştır.</p></div>
+   </div>
+  </div>
+ </div></section>
+
+ <section class="band" style="padding-top:0"><div class="wrap">
+  <h2 id="lt">Benzer maçlar</h2>
+  <p class="note" style="margin-top:-4px">Oranları girdiğine en yakın olanlar en üstte.</p>
+  <div id="list"></div>
+ </div></section>
+</main>
+
+<section class="band kup" id="kuponlar"><div class="wrap">
+ <h2 class="kt" id="kt">Günün kuponları</h2>
+ <p class="note" id="kmeta">Kuponlar yükleniyor…</p>
+ <p class="warnbox" id="kuyari" hidden></p>
+ <div class="kgrid" id="kgrid"></div>
+ <p class="note" style="margin-top:14px">Seçimler, bugünkü uluslararası 1-X-2 oranlarıyla birebir aynı oranlı geçmiş maçların sonuçlarından hesaplanır (en az 20 eşleşme olan maçlar). Kupon oranları yasal bahis bülteninden alınır; oranlar maç saatine kadar değişebilir, oynamadan önce güncel oranı kontrol et. Geçmiş verinin tamamında hiçbir oran aralığına sürekli oynamak kâr getirmedi; kuponlar kesinlik değil, olasılık gösterir.</p>
+</div></section>
+
+<footer class="band"><div class="wrap">Veri: 2019/20 sezonundan bugüne geçmiş maç sonuçları ve uluslararası kapanış oranları. Ekstra liglerde (Arjantin, Brezilya, ABD vb.) ilk yarı skoru yok; bu maçlar İY/MS tablosuna girmez. Geçmiş sonuçlar gelecek maçları garanti etmez.<br><b>Bu bir tahmin sitesidir; hiçbir tahmin kesinlik vermez. Yasa dışı bahis suçtur. Bahis yalnızca yasal ve lisanslı kanallardan, 18 yaşından büyükler tarafından oynanabilir.</b></div></footer>
+
+<script>
+{
+const LIG={E0:"İngiltere Premier Lig",E1:"İngiltere Championship",E2:"İngiltere League One",E3:"İngiltere League Two",EC:"İngiltere National League",SC0:"İskoçya Premiership",SC1:"İskoçya Championship",SC2:"İskoçya League One",SC3:"İskoçya League Two",D1:"Almanya Bundesliga",D2:"Almanya 2. Bundesliga",I1:"İtalya Serie A",I2:"İtalya Serie B",SP1:"İspanya La Liga",SP2:"İspanya Segunda",F1:"Fransa Ligue 1",F2:"Fransa Ligue 2",N1:"Hollanda Eredivisie",B1:"Belçika Pro League",P1:"Portekiz Liga",T1:"Türkiye Süper Lig",G1:"Yunanistan Super League",ARG:"Arjantin",AUT:"Avusturya",BRA:"Brezilya Serie A",CHN:"Çin Süper Lig",DNK:"Danimarka Superliga",FIN:"Finlandiya",IRL:"İrlanda",JPN:"Japonya J1",MEX:"Meksika Liga MX",NOR:"Norveç Eliteserien",POL:"Polonya Ekstraklasa",ROU:"Romanya",SWE:"İsveç Allsvenskan",SWZ:"İsviçre Super League",USA:"ABD MLS"};
+const MAIN=["E0","E1","E2","E3","EC","SC0","SC1","SC2","SC3","D1","D2","I1","I2","SP1","SP2","F1","F2","N1","B1","P1","T1","G1"];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const res=(a,b)=>a>b?"1":a<b?"2":"X";
+const pct=(a,n)=>n?(100*a/n):0;
+const fmt=v=>v.toFixed(v>=10?0:1).replace(".",",")+"%";
+let D=[],shown=50,hits=[];
+
+const ls=$("lig");
+ls.innerHTML='<option value="">Tüm ligler</option><option value="@main">Sadece İY/MS olan 22 lig</option><optgroup label="İY/MS olan ligler">'+MAIN.map(k=>`<option value="${k}">${esc(LIG[k])}</option>`).join("")+'</optgroup><optgroup label="Sadece maç sonucu olan ligler">'+Object.keys(LIG).filter(k=>!MAIN.includes(k)).map(k=>`<option value="${k}">${esc(LIG[k])}</option>`).join("")+'</optgroup>';
+
+const ids=["o1","ox","o2","tol","lig","yil","htonly"];
+try{const s=JSON.parse(localStorage.getItem("oranMotoru")||"{}");for(const k of ids){if(s[k]===undefined)continue;const el=$(k);if(el.type==="checkbox")el.checked=s[k];else el.value=s[k]}}catch(e){}
+const save=()=>{try{const s={};for(const k of ids){const el=$(k);s[k]=el.type==="checkbox"?el.checked:el.value}localStorage.setItem("oranMotoru",JSON.stringify(s))}catch(e){}};
+const num=id=>{const v=parseFloat(String($(id).value).replace(",","."));return isFinite(v)&&v>1?v:null};
+
+function run(){
+ $("tolv").textContent=(+$("tol").value).toFixed(2);
+ const a=num("o1"),x=num("ox"),b=num("o2"),t=+$("tol").value+1e-9,lg=$("lig").value,yr=+$("yil").value,ho=$("htonly").checked;
+ renderFair(a,x,b);
+ if(!D.length)return;
+ if(a===null||x===null||b===null){$("cnt").textContent="–";$("cntt").textContent="Üç oranı da 1'den büyük bir sayı olarak gir (örnek: 2,10).";hits=[];draw();return}
+ hits=[];
+ for(const r of D){
+  if(Math.abs(r[8]-a)>t||Math.abs(r[9]-x)>t||Math.abs(r[10]-b)>t)continue;
+  if(lg==="@main"){if(!MAIN.includes(r[1]))continue}else if(lg&&r[1]!==lg)continue;
+  if(yr&&+r[0].slice(0,4)<yr)continue;
+  if(ho&&r[6]===null)continue;
+  hits.push(r);
+ }
+ hits.sort((p,q)=>(Math.abs(p[8]-a)+Math.abs(p[9]-x)+Math.abs(p[10]-b))-(Math.abs(q[8]-a)+Math.abs(q[9]-x)+Math.abs(q[10]-b))||(p[0]<q[0]?1:-1));
+ shown=50;save();draw();
+}
+
+function renderFair(a,x,b){
+ if(a===null||x===null||b===null){$("fair").innerHTML="";return}
+ const s=1/a+1/x+1/b;
+ $("fair").innerHTML=[["1",1/a],["X",1/x],["2",1/b]].map(([k,v])=>`<div><b>${fmt(100*v/s)}</b><span>${k}</span></div>`).join("")+`<div style="grid-column:1/-1"><span>Büro payı: ${fmt((s-1)*100)}</span></div>`;
+}
+
+function draw(){
+ const n=hits.length;
+ $("cnt").textContent=n.toLocaleString("tr-TR")+" maç";
+ $("cntt").innerHTML=n?(n<30?'<span class="warn">Az örnek var; yakınlığı artırmayı dene.</span>':"bu oranlara yakın oynandı"):"Bu ayarlarla eşleşen maç yok. Yakınlık ayarını büyüt.";
+ const ft={"1":0,X:0,"2":0},hf={};let hn=0;
+ for(const r of hits){ft[res(r[4],r[5])]++;if(r[6]!==null){hn++;const k=res(r[6],r[7])+"/"+res(r[4],r[5]);hf[k]=(hf[k]||0)+1}}
+ const ftMax=Math.max(ft["1"],ft.X,ft["2"]);
+ $("bars").innerHTML=[["1","Ev"],["X","Beraberlik"],["2","Deplasman"]].map(([k,l])=>{const p=pct(ft[k],n);return `<div class="bar${n&&ft[k]===ftMax?" top":""}"><span class="k">${k} · ${l}</span><div class="t"><div style="width:${p}%"></div></div><span class="v">${fmt(p)}</span></div>`}).join("")+`<p class="note" style="margin:4px 0 0">${n.toLocaleString("tr-TR")} maç üzerinden.</p>`;
+ const R=["1","X","2"],hMax=Math.max(0,...Object.values(hf));
+ let h='<div></div>'+R.map(c=>`<div class="lab">MS ${c}</div>`).join("");
+ for(const i of R){h+=`<div class="lab">İY ${i}</div>`;for(const m of R){const c=hf[i+"/"+m]||0,p=pct(c,hn);h+=`<div class="cellx${hn&&c===hMax?" top":""}"><div class="fill" style="height:${hMax?100*c/hMax:0}%"></div><i>${i}/${m}</i><b>${fmt(p)}</b><span>${c.toLocaleString("tr-TR")} maç</span></div>`}}
+ $("board").innerHTML=h;
+ $("bnote").textContent=hn?`İY/MS, ilk yarı skoru bilinen ${hn.toLocaleString("tr-TR")} maçtan hesaplandı. Satır ilk yarı, sütun maç sonu sonucu.`:"İY/MS için ilk yarı skoru olan maç yok.";
+ list();
+}
+
+function list(){
+ if(!hits.length){$("list").innerHTML='<div class="empty">Gösterilecek maç yok.</div>';return}
+ const rows=hits.slice(0,shown).map(r=>{const ht=r[6]===null?"–":`${r[6]}-${r[7]}`;const hfk=r[6]===null?"–":res(r[6],r[7])+"/"+res(r[4],r[5]);
+  return `<tr><td>${esc(r[2])}</td><td>${esc(r[3])}</td><td class="n">${esc(ht)}</td><td class="n"><b>${r[4]}-${r[5]}</b></td><td class="n"><span class="tag">${esc(hfk)}</span></td></tr>`}).join("");
+ $("list").innerHTML=`<div class="scroll"><table class="stack"><thead><tr><th>Ev sahibi</th><th>Deplasman</th><th class="n">İY</th><th class="n">MS</th><th class="n">İY/MS</th></tr></thead><tbody>${rows}</tbody></table></div>`+(hits.length>shown?`<button class="more" id="more" type="button">${Math.min(50,hits.length-shown)} maç daha göster (kalan ${(hits.length-shown).toLocaleString("tr-TR")})</button>`:"");
+ const mb=$("more");if(mb)mb.addEventListener("click",()=>{shown+=50;list()});
+}
+
+const yuz=v=>"%"+(v*100).toLocaleString("tr-TR",{maximumFractionDigits:v<0.01?1:0});
+function kart(k){
+ const cls=k.tur==="banko"?"":k.tur==="sistem"?" y":" s";
+ const sec=k.secimler.map(s=>`<div class="sec"><div class="r"><span class="m">${esc(s.idd_ad||s.mac)}</span><span class="o">${s.oran?Number(s.oran).toFixed(2):"–"}</span></div><div class="i">${esc(s.saat)} · ${esc(s.lig)}${s.mbs?" · MBS "+esc(s.mbs):""}</div><span class="pk">${esc(s.secim)}</span><div class="i">Birebir aynı oranlı maçlarda: ${s.hits}/${s.n} (${yuz(s.gecmis)}) · yakın oranlarda: ${yuz(s.ortalama)}</div><details><summary>Neden bu seçim?</summary><p>${esc(s.aciklama)}</p></details></div>`).join("");
+ let alt="";
+ if(k.tur==="sistem"){
+  const rows=k.tablo.filter(t=>t.tutan>=1).map(t=>`<tr><td>${t.tutan} maç tutarsa</td><td class="n">${yuz(t.olasilik)}</td><td class="n">${t.en_cok===null?"–":t.en_cok?(t.en_az===t.en_cok?t.en_az.toLocaleString("tr-TR"):t.en_az.toLocaleString("tr-TR")+" – "+t.en_cok.toLocaleString("tr-TR")):"0"}</td></tr>`).join("");
+  alt=`<div class="tot"><div><b>${k.kolon}</b><span>kolon (her kolona 1 birim = ${k.kolon} birim)</span></div><div><b>${k.secimler.length}</b><span>maç</span></div></div>${k.tablo.some(t=>t.en_cok===null)?'<p class="knote">Bazı seçimlerin oranı bültende olmadığı için geri dönüş hesaplanamadı.</p>':''}<div class="scroll" style="padding:0 16px 8px"><table class="st"><thead><tr><th>Durum</th><th class="n">İhtimal</th><th class="n">Geri dönüş (birim)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+ }else{
+  alt=`<div class="tot"><div><b>${k.toplam_oran?Number(k.toplam_oran).toLocaleString("tr-TR",{maximumFractionDigits:2}):"–"}</b><span>${k.toplam_oran?"toplam oran":"toplam oran (bazı oranlar listede yok)"}</span></div><div><b>${yuz(k.tutma_olasiligi)}</b><span>tahmini tutma ihtimali</span></div></div>`;
+ }
+ return `<article class="kart${cls}"><header><h3>${esc(k.ad)}</h3><p>${esc(k.not_)}</p></header>${sec||'<p class="knote" style="padding-top:12px">Bugün bu kupona uygun maç bulunamadı.</p>'}${alt}</article>`;
+}
+fetch("kuponlar.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{
+ $("kt").textContent="Günün kuponları · "+j.tarih.replace(/\//g,".");
+ $("kmeta").textContent=`${j.mac_sayisi} maç incelendi, ${j.uygun_mac??"?"} tanesinde birebir aynı oranlı en az ${j.min_n??20} geçmiş maç vardı. Hazırlanma: ${j.hazirlandi}. Saatler Türkiye saatiyle.`;
+ if(j.uyari){$("kuyari").textContent=j.uyari;$("kuyari").hidden=false}
+ $("kgrid").innerHTML=j.kuponlar.map(kart).join("");
+}).catch(()=>{$("kmeta").textContent="Bugünün kuponları henüz hazır değil."});
+
+let tm;const later=()=>{clearTimeout(tm);tm=setTimeout(run,120)};
+for(const k of ids){$(k).addEventListener("input",later);$(k).addEventListener("change",later)}
+$("f").addEventListener("submit",e=>{e.preventDefault();run()});
+renderFair(num("o1"),num("ox"),num("o2"));
+fetch("maclar.json").then(r=>{if(!r.ok)throw new Error(r.status);return r.json()}).then(j=>{D=j;$("cntt").textContent="";run()}).catch(e=>{$("cnt").textContent="Hata";$("cntt").textContent="Maç verisi yüklenemedi. Sayfayı yenilemeyi dene."});
+}
+</script>
+</body>
+</html>
