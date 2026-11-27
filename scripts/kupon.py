@@ -10,6 +10,7 @@ SIMDI = dt.datetime.strptime(sys.argv[5], "%Y-%m-%d %H:%M").replace(tzinfo=ZoneI
 IDD = json.load(open(sys.argv[6], encoding="utf-8")) if len(sys.argv) > 6 else None   # bülten oranları (yoksa sadece uygun maç listesi yazılır)
 BANKO_MIN, SURPRIZ_MIN = 2.0, 200.0
 MIN_N = 20          # birebir aynı oranlı en az bu kadar geçmiş maç yoksa o maç kupona alınmaz
+AYNI_TUR = 2        # bir kuponda aynı bahis türü en fazla bu kadar
 SHRINK = 10         # tutma ihtimali tahmininde az örneğe aşırı güvenmemek için
 ULKE = {"Argentina": "ARG", "Austria": "AUT", "Brazil": "BRA", "China": "CHN", "Denmark": "DNK", "Finland": "FIN",
         "Ireland": "IRL", "Japan": "JPN", "Mexico": "MEX", "Norway": "NOR", "Poland": "POL", "Romania": "ROU",
@@ -40,7 +41,7 @@ M = [("Maç sonucu 1", "MS 1", ms == "1", False, "B365H"), ("Maç sonucu X", "MS
      ("Toplam 1.5 gol üstü", "1.5 Üst", top >= 2, False, None), ("Toplam 1.5 gol altı", "1.5 Alt", top <= 1, False, None),
      ("Toplam 2.5 gol üstü", "2.5 Üst", top >= 3, False, "B365>2.5"), ("Toplam 2.5 gol altı", "2.5 Alt", top <= 2, False, "B365<2.5"),
      ("Toplam 3.5 gol üstü", "3.5 Üst", top >= 4, False, None), ("Toplam 3.5 gol altı", "3.5 Alt", top <= 3, False, None),
-     ("Toplam 4.5 gol üstü", "4.5 Üst", top >= 5, False, None), ("Toplam 5.5 gol üstü (6+ gol)", "5.5 Üst", top >= 6, False, None),
+     ("Toplam 4.5 gol üstü", "4.5 Üst", top >= 5, False, None),
      ("Karşılıklı gol var", "KG Var", (g1 > 0) & (g2 > 0), False, None), ("Karşılıklı gol yok", "KG Yok", (g1 == 0) | (g2 == 0), False, None),
      ("İlk yarı 0.5 gol üstü", "İY 0.5 Üst", ht >= 1, True, None), ("İlk yarı 1.5 gol üstü", "İY 1.5 Üst", ht >= 2, True, None),
      ("İlk yarı 1.5 gol altı", "İY 1.5 Alt", ht <= 1, True, None),
@@ -49,9 +50,6 @@ M = [("Maç sonucu 1", "MS 1", ms == "1", False, "B365H"), ("Maç sonucu X", "MS
 for i in "1X2":
     for j in "1X2":
         M.append((f"İlk yarı / maç sonu {i}/{j}", f"İY/MS {i}/{j}", (iy == i) & (ms == j), True, None))
-for a in range(5):
-    for b in range(5):
-        M.append((f"Maç skoru {a}-{b}", f"Skor {a}-{b}", (g1 == a) & (g2 == b), False, None))
 BASE = {m[1]: float(m[2][hasHT].mean() if m[3] else m[2].mean()) for m in M}
 
 def wilson_alt(h, n, z=1.64):
@@ -138,6 +136,7 @@ def sec(havuz, adet, anahtar, kullanildi):
     out = []
     for c in sorted(havuz, key=anahtar, reverse=True):
         if c["mac"]["mac"] in kullanildi: continue
+        if sum(x["kisa"] == c["kisa"] for x in out) >= AYNI_TUR: continue
         out.append(c); kullanildi.add(c["mac"]["mac"])
         if len(out) == adet: break
     return out
@@ -147,27 +146,33 @@ def satir(c):
                 oran=round(c["oran"], 2) if c["oran"] else None, gecmis=round(c["p"], 3), ortalama=round(c["base"], 3), yakin_n=c["yak_n"],
                 olasilik=round(c["tahmin"], 3), n=c["n"], hits=c["hits"], aciklama=aciklama(c))
 
-def kur(havuz, hedef, anahtar, kullanildi, en_cok=8):
-    """Havuzdan farklı maçlardan seçerek toplam bülten oranı hedefe ulaşana kadar ekle; MBS kuralına uy."""
+def kur(havuz, hedef, anahtar, kullanildi, en_cok=8, tavan=None):
+    """Havuzdan farklı maçlardan seçerek toplam bülten oranı hedefe ulaşana kadar ekle; MBS kuralına uy.
+    tavan verilirse toplamı tavanın üstüne çıkaracak seçim atlanır."""
     out, toplam = [], 1.0
     for c in sorted(havuz, key=anahtar):
         if c["mac"]["mac"] in kullanildi or c["mac"]["mac"] in {x["mac"]["mac"] for x in out}: continue
+        if tavan and toplam * c["oran"] > tavan: continue
+        if sum(x["kisa"] == c["kisa"] for x in out) >= AYNI_TUR: continue
         out.append(c); toplam *= c["oran"]
         if toplam >= hedef and len(out) >= max(x["mbc"] for x in out): break
         if len(out) >= en_cok: break
     for c in out: kullanildi.add(c["mac"]["mac"])
     return out
 
-# banko: geçmişte en az %70 tutan seçimler; oran başına en az ihtimal kaybeden önce (hedef toplam oran >= 2)
-bh = [c for c in adaylar if c["p"] >= 0.70 and c["tahmin"] >= 0.6 and c["oran"] >= 1.05]
+# MANTIK KURALI: bir seçim ancak hem birebir aynı oranlı maçlarda hem de oranı yakın daha geniş maç grubunda
+# destekleniyorsa kupona girer (küçük örnekteki şans eseri sonuçları elemek için).
+# banko: birebir grupta en az %72, geniş grupta en az %62 tutan, oranı 1.15-1.75 arası seçimler; toplam oran 2.00-3.50
+bh = [c for c in adaylar if c["p"] >= 0.72 and c["base"] >= 0.62 and c["tahmin"] >= 0.65 and 1.15 <= c["oran"] <= 1.75]
 kul = set()
-banko = kur(bh, BANKO_MIN, lambda c: -math.log(c["tahmin"]) / math.log(c["oran"]), kul)
-# sürpriz: nadir ama bu oranlarda belirgin sık çıkmış sonuçlar (hedef toplam oran >= 200)
-sh = [c for c in adaylar if c["base"] <= 0.35 and c["p"] >= 1.5 * c["base"] and c["hits"] >= 3 and c["oran"] >= 2.5]
-surpriz = kur(sh, SURPRIZ_MIN, lambda c: -(c["wl"] - c["base"]) / max(c["base"], 0.01), set(kul))
-# sistem: orta ihtimalli, yakın oranlara göre öne çıkan 6 seçim
-yh = [c for c in adaylar if 0.25 <= c["p"] <= 0.80 and c["wl"] > c["base"] and c["oran"] >= 1.5]
-sistem = sec(yh, 6, lambda c: c["wl"] - c["base"], {c["mac"]["mac"] for c in surpriz} | {c["mac"]["mac"] for c in banko})
+banko = kur(bh, BANKO_MIN, lambda c: -math.log(c["tahmin"]) / math.log(c["oran"]), kul, en_cok=5, tavan=3.5)
+# sürpriz: oranı 2.5-12 arası, iki grupta da en az %8 görülen ve birebir grupta belirgin sık çıkan sonuçlar;
+# hedef toplam oran 200, en fazla ~500'e kadar
+sh = [c for c in adaylar if 2.5 <= c["oran"] <= 12 and c["base"] >= 0.08 and c["p"] >= 1.3 * c["base"] and c["hits"] >= 5]
+surpriz = kur(sh, SURPRIZ_MIN, lambda c: -(c["tahmin"] * c["oran"]), set(kul), en_cok=6, tavan=SURPRIZ_MIN * 2.5)
+# sistem: oranı 1.6-4.0 arası, iki grupta da en az %30 tutan 6 seçim
+yh = [c for c in adaylar if 1.6 <= c["oran"] <= 4.0 and c["base"] >= 0.30 and c["p"] >= c["base"] and c["tahmin"] >= 0.35]
+sistem = sec(yh, 6, lambda c: c["tahmin"] * c["oran"], {c["mac"]["mac"] for c in surpriz} | {c["mac"]["mac"] for c in banko})
 
 def kupon_ozet(s):
     od = [c["oran"] for c in s]
@@ -199,9 +204,9 @@ sonuc = dict(tarih=GUN, hazirlandi=dt.datetime.now(ZoneInfo("Europe/Istanbul")).
              mac_sayisi=incelenen, uygun_mac=incelenen - yetersiz, eslesen=len(IDD), min_n=MIN_N, uyari=uyari,
              kuponlar=[
                  dict(ad="Banko kupon", tur="banko", secimler=[satir(c) for c in banko], **kupon_ozet(banko),
-                      not_="Birebir aynı oranlı geçmiş maçlarda en sık tutan seçimler; toplam oran en az 2,00. Hepsinin birden tutması gerekir."),
+                      not_="Hem birebir aynı oranlı maçlarda hem de benzer oranlı geniş maç grubunda en sık tutan seçimler; toplam oran 2,00 ve üzeri. Hepsinin birden tutması gerekir."),
                  dict(ad="Sürpriz kupon", tur="sürpriz", secimler=[satir(c) for c in surpriz], **kupon_ozet(surpriz),
-                      not_="Normalde nadir görülen ama bu oranlarda belirgin sık çıkmış sonuçlar; toplam oran en az 200. Tutma ihtimali çok düşük."),
+                      not_="Oranı yüksek ama birebir aynı oranlı maçlarda beklenenden sık çıkmış sonuçlar; toplam oran 200 civarı. Tutma ihtimali çok düşük."),
                  dict(ad="Sistem 2-3-4-5-6", tur="sistem", secimler=[satir(c) for c in sistem], **sistem_ozet(sistem),
                       not_="6 seçimden 2'li, 3'lü, 4'lü, 5'li ve 6'lı bütün kombinasyonlar. 2 seçim tutsa bile bir kolon kazanır."),
              ])
