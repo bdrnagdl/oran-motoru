@@ -11,7 +11,8 @@ ALIAS = {"man united": "manchester united", "man city": "manchester city", "ath 
          "paris sg": "paris saint germain", "sociedad b": "real sociedad b", "holstein kiel": "kiel", "inter": "inter milan",
          "vallecano": "rayo vallecano", "dundee united": "dundee utd", "fc koln": "koln", "qpr": "queens park rangers",
          "nott m forest": "nottingham forest", "wolves": "wolverhampton", "m gladbach": "monchengladbach",
-         "sp lisbon": "sporting", "sp braga": "braga"}
+         "sp lisbon": "sporting", "sp braga": "braga", "sociedad": "real sociedad", "for sittard": "fortuna sittard",
+         "st gilloise": "union saint gilloise", "celta": "celta vigo"}
 STOP = r"\b(fc|cf|sc|sk|ac|afc|as|ss|us|cd|ud|sd|rc|fk|if|bk|club|de|the|calcio)\b"
 
 
@@ -45,22 +46,15 @@ def benzer(a, b):
 
 
 def oranlar(d):
-    o, mm = {}, {}
-    def put(k, v, mb):
-        if k and v and v > 1: o[k] = v; mm[k] = mb
+    """Maçtaki bütün bahis seçeneklerini ham haliyle döndürür: [anahtar, çizgi, seçenek adı, oran, MBS]."""
+    out = []
     for m in d.get("m", []):
         key, sov, mb = f"{m.get('t')}_{m.get('st')}", m.get("sov"), m.get("mbc", 1)
         for x in m.get("o", []):
-            n, v = x.get("n"), x.get("odd")
-            if key == "1_1": put({"1": "MS 1", "0": "MS X", "2": "MS 2"}.get(n), v, mb)
-            elif key == "2_92":
-                put({"1 ve 0": "ÇŞ 1X", "0 ve 2": "ÇŞ X2"}.get(n), v, mb)
-            elif key == "2_101" and sov in ("1.5", "2.5", "3.5", "4.5", "5.5"): put(f"{sov} {'Üst' if n == 'Üst' else 'Alt'}", v, mb)
-            elif key == "2_89": put("KG Var" if n == "Var" else "KG Yok", v, mb)
-            elif key == "2_60" and sov in ("0.5", "1.5"): put(f"İY {sov} {'Üst' if n == 'Üst' else 'Alt'}", v, mb)
-            elif key == "2_90" and n: put("İY/MS " + n.replace("0", "X"), v, mb)
-            elif key == "2_86" and n and re.fullmatch(r"\d:\d", n): put("Skor " + n.replace(":", "-"), v, mb)
-    return o, mm
+            v = x.get("odd")
+            if v and v > 1:
+                out.append([key, sov, x.get("n"), v, mb])
+    return out
 
 
 def main(giris, cikis):
@@ -80,9 +74,9 @@ def main(giris, cikis):
             yok.append(f"{u['ev']} - {u['dep']}"); continue
         d = (al(B + f"event/{best['i']}") or {}).get("data")
         if not d: yok.append(f"{u['ev']} - {u['dep']}"); continue
-        o, mm = oranlar(d)
+        o = oranlar(d)
         out.append(dict(fd_ev=u["ev"], fd_dep=u["dep"], idd_ev=best["hn"], idd_dep=best["an"], mbc=best.get("mbc", 1),
-                        mbc_m=mm, oran=o, benzerlik=round(bs, 2)))
+                        secenekler=o, benzerlik=round(bs, 2)))
         print(f"  {u['ev']} - {u['dep']}  =>  {best['hn']} - {best['an']} ({bs:.2f}), {len(o)} oran", flush=True)
         time.sleep(0.4)
     json.dump(out, open(cikis, "w", encoding="utf-8"), ensure_ascii=False)

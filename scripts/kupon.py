@@ -1,5 +1,8 @@
-"""Günlük kupon motoru (birebir aynı oran + geniş bahis türleri).
-Kullanım: python3 -I kupon.py <kapanis_maclar.csv> <fikstur.txt> <GG/AA/YYYY> <cikti.json> [simdi_TR 'YYYY-MM-DD HH:MM']
+"""Günlük kupon motoru.
+Seçimler: birebir aynı 1-X-2 kapanış oranlı geçmiş maçlar + bültendeki her bahis türü (geçmiş skorlardan hesaplanabilenler).
+Kullanım:
+  1) uygun maç listesi:  python3 kupon.py <kapanis_maclar.csv> <fikstur.txt> <GG/AA/YYYY> <uygun.json> [simdi 'YYYY-MM-DD HH:MM']
+  2) kuponlar:           python3 kupon.py <kapanis_maclar.csv> <fikstur.txt> <GG/AA/YYYY> <kuponlar.json> <simdi> <bulten.json>
 """
 import sys, json, io, math, itertools, datetime as dt
 from zoneinfo import ZoneInfo
@@ -7,10 +10,10 @@ import numpy as np, pandas as pd
 
 DB, FIX, GUN, OUT = sys.argv[1:5]
 SIMDI = dt.datetime.strptime(sys.argv[5], "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("Europe/Istanbul")) if len(sys.argv) > 5 else None
-IDD = json.load(open(sys.argv[6], encoding="utf-8")) if len(sys.argv) > 6 else None   # bülten oranları (yoksa sadece uygun maç listesi yazılır)
-BANKO_MIN, SURPRIZ_MIN = 2.0, 200.0
+IDD = json.load(open(sys.argv[6], encoding="utf-8")) if len(sys.argv) > 6 else None
+BANKO_MIN, BANKO_MAX = 2.0, 3.5
+SURPRIZ_MIN, SURPRIZ_MAX = 200.0, 3000.0
 MIN_N = 20          # birebir aynı oranlı en az bu kadar geçmiş maç yoksa o maç kupona alınmaz
-AYNI_TUR = 2        # bir kuponda aynı bahis türü en fazla bu kadar
 SHRINK = 10         # tutma ihtimali tahmininde az örneğe aşırı güvenmemek için
 ULKE = {"Argentina": "ARG", "Austria": "AUT", "Brazil": "BRA", "China": "CHN", "Denmark": "DNK", "Finland": "FIN",
         "Ireland": "IRL", "Japan": "JPN", "Mexico": "MEX", "Norway": "NOR", "Poland": "POL", "Romania": "ROU",
@@ -30,32 +33,113 @@ O = {"1": db.b365ch.round(2).to_numpy(), "X": db.b365cd.round(2).to_numpy(), "2"
 g1, g2 = db.fthg.to_numpy(), db.ftag.to_numpy()
 hasHT = db.hthg.notna().to_numpy()
 h1, h2 = db.hthg.fillna(0).to_numpy(), db.htag.fillna(0).to_numpy()
-top, ht, st = g1 + g2, h1 + h2, (g1 + g2) - (h1 + h2)
-ms = np.where(g1 > g2, "1", np.where(g1 < g2, "2", "X"))
-iy = np.where(h1 > h2, "1", np.where(h1 < h2, "2", "X"))
+s1, s2 = g1 - h1, g2 - h2                      # ikinci yarı golleri
+top, ht, st = g1 + g2, h1 + h2, s1 + s2
 
-# ---- bahis türleri: (ad, kısa, sonuç dizisi, ilk yarı skoru gerekir mi, fikstürdeki oran sütunu)
-M = [("Maç sonucu 1", "MS 1", ms == "1", False, "B365H"), ("Maç sonucu X", "MS X", ms == "X", False, "B365D"),
-     ("Maç sonucu 2", "MS 2", ms == "2", False, "B365A"),
-     ("Çifte şans 1-X", "ÇŞ 1X", ms != "2", False, None), ("Çifte şans X-2", "ÇŞ X2", ms != "1", False, None),
-     ("Toplam 1.5 gol üstü", "1.5 Üst", top >= 2, False, None), ("Toplam 1.5 gol altı", "1.5 Alt", top <= 1, False, None),
-     ("Toplam 2.5 gol üstü", "2.5 Üst", top >= 3, False, "B365>2.5"), ("Toplam 2.5 gol altı", "2.5 Alt", top <= 2, False, "B365<2.5"),
-     ("Toplam 3.5 gol üstü", "3.5 Üst", top >= 4, False, None), ("Toplam 3.5 gol altı", "3.5 Alt", top <= 3, False, None),
-     ("Toplam 4.5 gol üstü", "4.5 Üst", top >= 5, False, None),
-     ("Karşılıklı gol var", "KG Var", (g1 > 0) & (g2 > 0), False, None), ("Karşılıklı gol yok", "KG Yok", (g1 == 0) | (g2 == 0), False, None),
-     ("İlk yarı 0.5 gol üstü", "İY 0.5 Üst", ht >= 1, True, None), ("İlk yarı 1.5 gol üstü", "İY 1.5 Üst", ht >= 2, True, None),
-     ("İlk yarı 1.5 gol altı", "İY 1.5 Alt", ht <= 1, True, None),
-     ("2. yarı 0.5 gol üstü", "2Y 0.5 Üst", st >= 1, True, None), ("2. yarı 1.5 gol üstü", "2Y 1.5 Üst", st >= 2, True, None),
-     ("2. yarı 1.5 gol altı", "2Y 1.5 Alt", st <= 1, True, None)]
-for i in "1X2":
-    for j in "1X2":
-        M.append((f"İlk yarı / maç sonu {i}/{j}", f"İY/MS {i}/{j}", (iy == i) & (ms == j), True, None))
-BASE = {m[1]: float(m[2][hasHT].mean() if m[3] else m[2].mean()) for m in M}
+
+def sonuc(a, b):
+    return np.where(a > b, "1", np.where(a < b, "2", "X"))
+
+
+ms, iy, y2 = sonuc(g1, g2), sonuc(h1, h2), sonuc(s1, s2)
+kg, iykg, y2kg = (g1 > 0) & (g2 > 0), (h1 > 0) & (h2 > 0), (s1 > 0) & (s2 > 0)
+X = {"1": "1", "0": "X", "2": "2"}
+AU = {"Alt": "alt", "Üst": "üst"}
+
+
+def au(dizi, cizgi, n):
+    return dizi < cizgi if n == "Alt" else dizi > cizgi
+
+
+def katalog(key, sov, n):
+    """Bültendeki bir bahis seçeneğini geçmiş skorlardan hesaplanabilir hale getirir.
+    Dönüş: (Türkçe ad, sonuç dizisi, ilk yarı skoru gerekir mi) ya da None."""
+    try:
+        c = float(sov) if sov not in (None, "") else None
+    except ValueError:
+        c = None
+    ev = {"Evet": True, "Hayır": False}
+    if key == "1_1" and n in X: return f"Maç sonucu {X[n]}", ms == X[n], False
+    if key == "2_92":
+        d = {"1 ve 0": ("1-X", ms != "2"), "1 ve 2": ("1-2", ms != "X"), "0 ve 2": ("X-2", ms != "1")}
+        if n in d: return f"Çifte şans {d[n][0]}", d[n][1], False
+    if key == "2_101" and c is not None and n in AU: return f"Toplam {sov} gol {AU[n]}", au(top, c, n), False
+    if key == "2_89" and n in ("Var", "Yok"): return f"Karşılıklı gol {n.lower()}", kg if n == "Var" else ~kg, False
+    if key == "2_60" and c is not None and n in AU: return f"İlk yarı {sov} gol {AU[n]}", au(ht, c, n), True
+    if key == "2_90" and n and "/" in n:
+        a, b = n.split("/")
+        if a in X and b in X: return f"İlk yarı / maç sonu {X[a]}/{X[b]}", (iy == X[a]) & (ms == X[b]), True
+    if key == "2_88" and n in X: return f"İlk yarı sonucu {X[n]}", iy == X[n], True
+    if key == "2_36" and n in X: return f"2. yarı sonucu {X[n]}", y2 == X[n], True
+    if key == "2_720" and n in ("Var", "Yok"): return f"İlk yarı karşılıklı gol {n.lower()}", iykg if n == "Var" else ~iykg, True
+    if key == "2_821" and n in ("Var", "Yok"): return f"2. yarı karşılıklı gol {n.lower()}", y2kg if n == "Var" else ~y2kg, True
+    if key == "2_866" and n and " / " in n:
+        a, b = n.split(" / ")
+        if a in ev and b in ev:
+            return (f"1. yarı KG {'var' if ev[a] else 'yok'} / 2. yarı KG {'var' if ev[b] else 'yok'}",
+                    (iykg == ev[a]) & (y2kg == ev[b]), True)
+    if key == "2_730" and n in ev: return f"Her iki yarıda 1.5 üst: {n.lower()}", ((ht >= 2) & (st >= 2)) == ev[n], True
+    if key == "2_729" and n in ev: return f"Her iki yarıda 1.5 alt: {n.lower()}", ((ht <= 1) & (st <= 1)) == ev[n], True
+    if key in ("2_7", "2_698", "2_699", "2_724", "2_700") and n and " ve " in n:
+        a, b = n.split(" ve ")
+        if key == "2_7" and a in X and b in AU and c is not None:
+            return f"Maç sonucu {X[a]} ve {sov} {AU[b]}", (ms == X[a]) & au(top, c, b), False
+        if key == "2_698" and a in X and b in ("Var", "Yok"):
+            return f"Maç sonucu {X[a]} ve KG {b.lower()}", (ms == X[a]) & (kg if b == "Var" else ~kg), False
+        if key == "2_699" and a in X and b in ("Var", "Yok"):
+            return f"İlk yarı {X[a]} ve İY KG {b.lower()}", (iy == X[a]) & (iykg if b == "Var" else ~iykg), True
+        if key == "2_724" and a in X and b in AU and c is not None:
+            return f"İlk yarı {X[a]} ve İY {sov} {AU[b]}", (iy == X[a]) & au(ht, c, b), True
+        if key == "2_700" and a in AU and b in ("Var", "Yok") and c is not None:
+            return f"Toplam {sov} {AU[a]} ve KG {b.lower()}", au(top, c, a) & (kg if b == "Var" else ~kg), False
+    if key == "2_6":
+        d = {"1.": ht > st, "Eşit": ht == st, "2.": st > ht}
+        if n in d: return f"En çok gol: {'1. yarı' if n == '1.' else '2. yarı' if n == '2.' else 'eşit'}", d[n], True
+    if key in ("2_84", "2_85"):
+        a, b = (h1, s1) if key == "2_84" else (h2, s2)
+        kim = "Ev sahibi" if key == "2_84" else "Deplasman"
+        d = {"1.": a > b, "Eşit": a == b, "2.": b > a}
+        if n in d: return f"{kim} en çok golü: {'1. yarı' if n == '1.' else '2. yarı' if n == '2.' else 'eşit'}", d[n], True
+    if key == "2_4":
+        d = {"0-1 gol": top <= 1, "2-3 gol": (top >= 2) & (top <= 3), "4-5 gol": (top >= 4) & (top <= 5), "6+ gol": top >= 6}
+        if n in d: return f"Toplam gol {n}", d[n], False
+    if key in ("2_603", "2_604") and c is not None and n in AU:
+        return f"{'Ev sahibi' if key == '2_603' else 'Deplasman'} {sov} gol {AU[n]}", au(g1 if key == "2_603" else g2, c, n), False
+    if key in ("2_722", "2_723") and c is not None and n in AU:
+        return f"{'Ev sahibi' if key == '2_722' else 'Deplasman'} ilk yarı {sov} gol {AU[n]}", au(h1 if key == "2_722" else h2, c, n), True
+    if key == "2_91" and n in ("Tek", "Çift"): return f"Toplam gol {n.lower()}", (top % 2 == 1) == (n == "Tek"), False
+    if key == "2_719" and n in ("Tek", "Çift"): return f"İlk yarı gol {n.lower()}", (ht % 2 == 1) == (n == "Tek"), True
+    if key in ("2_69", "2_72") and n in ev:
+        a = (h1 > h2) & (s1 > s2) if key == "2_69" else (h2 > h1) & (s2 > s1)
+        return f"{'Ev sahibi' if key == '2_69' else 'Deplasman'} iki yarıyı da kazanır: {n.lower()}", a == ev[n], True
+    if key in ("2_727", "2_728") and n in ev:
+        a = (h1 > h2) | (s1 > s2) if key == "2_727" else (h2 > h1) | (s2 > s1)
+        return f"{'Ev sahibi' if key == '2_727' else 'Deplasman'} en az bir yarıyı kazanır: {n.lower()}", a == ev[n], True
+    if key in ("2_861", "2_862") and n in ev:
+        a = (h1 > 0) & (s1 > 0) if key == "2_861" else (h2 > 0) & (s2 > 0)
+        return f"{'Ev sahibi' if key == '2_861' else 'Deplasman'} iki yarıda da gol atar: {n.lower()}", a == ev[n], True
+    if key == "2_11":
+        f = g1 - g2
+        d = {"Ev 3+": f >= 3, "Ev 2": f == 2, "Ev 1": f == 1, "0": f == 0, "Dep 1": f == -1, "Dep 2": f == -2, "Dep 3+": f <= -3}
+        if n in d: return f"Fark: {n if n != '0' else 'beraberlik'}", d[n], False
+    if key == "2_100" and c is not None and n in X:
+        hs = sonuc(g1 + c, g2)
+        return f"Handikaplı maç sonucu (ev sahibi {c:+g}) {X[n]}", hs == X[n], False
+    return None
+
+
+_ON = {}
+def katalog_onbellek(key, sov, n):
+    k = (key, sov, n)
+    if k not in _ON: _ON[k] = katalog(key, sov, n)
+    return _ON[k]
+
 
 def wilson_alt(h, n, z=1.64):
     if n == 0: return 0.0
     p = h / n; d = 1 + z * z / n
     return (p + z * z / (2 * n) - z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / d
+
 
 # ---- fikstür
 def bolumler(txt):
@@ -70,16 +154,20 @@ fxx = bl["/new_league_fixtures.csv"]; fxx = fxx[fxx.Date == GUN]
 fx = [dict(lig=r["Div"], saat=r["Time"], ev=r["HomeTeam"], dep=r["AwayTeam"], row=r) for _, r in fm.iterrows()]
 fx += [dict(lig=ULKE.get(r["Country"], r["Country"]), saat=r["Time"], ev=r["Home"], dep=r["Away"], row=r) for _, r in fxx.iterrows()]
 
+
 def fnum(v):
     try:
         v = float(v); return v if v > 1 else None
     except (TypeError, ValueError): return None
 
+
 def tr_saat(saat):
     d = dt.datetime.strptime(GUN + " " + saat, "%d/%m/%Y %H:%M").replace(tzinfo=ZoneInfo("Europe/London"))
     return d.astimezone(ZoneInfo("Europe/Istanbul"))
 
+
 def pct(v): return f"%{v*100:.0f}"
+
 
 adaylar, incelenen, yetersiz, uygun = [], 0, 0, []
 IDX = {(x["fd_ev"], x["fd_dep"]): x for x in (IDD or [])}
@@ -95,89 +183,91 @@ for f in fx:
     for t in (0.03, 0.05, 0.08, 0.12, 0.20):
         yak = (np.abs(O["1"] / o[0] - 1) <= t) & (np.abs(O["X"] / o[1] - 1) <= t) & (np.abs(O["2"] / o[2] - 1) <= t)
         if yak.sum() >= 150: break
-    utc = bas.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M")
-    uygun.append(dict(ev=f["ev"], dep=f["dep"], utc=utc))
+    uygun.append(dict(ev=f["ev"], dep=f["dep"], utc=bas.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M")))
     idd = IDX.get((f["ev"], f["dep"]))
-    if IDD is not None and not idd: continue
-    nh = int((msk & hasHT).sum())
+    if IDD is None or not idd: continue
     skorlar = pd.Series([f"{int(a)}-{int(b)}" for a, b in zip(g1[msk], g2[msk])]).value_counts().head(3)
-    mac = dict(mbc=(idd or {}).get("mbc", 1), idd_ad=(f"{idd['idd_ev']} – {idd['idd_dep']}" if idd else None), mac=f"{f['ev']} – {f['dep']}", lig=LIG.get(f["lig"], f["lig"]), saat=bas.strftime("%d.%m %H:%M"), oran=o, n=n, nh=nh,
+    mac = dict(mbc=idd.get("mbc", 1), idd_ad=f"{idd['idd_ev']} – {idd['idd_dep']}", mac=f"{f['ev']} – {f['dep']}",
+               lig=LIG.get(f["lig"], f["lig"]), saat=bas.strftime("%d.%m %H:%M"), oran=o, n=n,
                skorlar=", ".join(f"{s} ({c} kez)" for s, c in skorlar.items()))
-    for ad, kisa, sonuc, ht_gerek, ocol in M:
+    for key, sov, ad_n, oran, mbc in idd.get("secenekler", []):
+        k = katalog_onbellek(key, sov, ad_n)
+        if not k: continue
+        ad, dizi, ht_gerek = k
         mm = msk & hasHT if ht_gerek else msk
         nn = int(mm.sum())
         if nn < MIN_N: continue
-        hits = int(sonuc[mm].sum()); p = hits / nn
+        hits = int(dizi[mm].sum()); p = hits / nn
         ym = yak & hasHT if ht_gerek else yak
-        base = float(sonuc[ym].mean()) if ym.sum() >= 50 else BASE[kisa]
-        adaylar.append(dict(mac=mac, ad=ad, kisa=kisa, n=nn, hits=hits, p=p, wl=wilson_alt(hits, nn), base=base, genel=BASE[kisa],
-                            yak_n=int(ym.sum()), tol=t, tahmin=(hits + SHRINK * base) / (nn + SHRINK),
-                            oran=(idd["oran"].get(kisa) if idd else None), mbc=max((idd or {}).get("mbc", 1), (idd or {}).get("mbc_m", {}).get(kisa, 1))))
+        if ym.sum() < 50: continue
+        base = float(dizi[ym].mean())
+        tahmin = (hits + SHRINK * base) / (nn + SHRINK)
+        adaylar.append(dict(mac=mac, ad=ad, tur=key, n=nn, hits=hits, p=p, wl=wilson_alt(hits, nn), base=base, yak_n=int(ym.sum()),
+                            tol=t, tahmin=tahmin, oran=float(oran), deger=tahmin * float(oran), mbc=max(mac["mbc"], mbc or 1)))
 if IDD is None:
     json.dump(uygun, open(OUT, "w", encoding="utf-8"), ensure_ascii=False)
     print(f"uygun maç: {len(uygun)} -> {OUT}"); sys.exit(0)
-adaylar = [c for c in adaylar if c["oran"] and c["oran"] > 1.0]
+
 
 def aciklama(c):
     mc = c["mac"]
     t = (f"Bu maçın uluslararası 1-X-2 oranları {mc['oran'][0]:.2f} – {mc['oran'][1]:.2f} – {mc['oran'][2]:.2f}. Geçmişte birebir aynı oranlarla "
          f"oynanmış {mc['n']} maç var. ")
-    if c["n"] != mc["n"]: t += f"Bunların ilk yarı skoru bilinen {c['n']} tanesinin "
-    else: t += "Bunların "
+    t += f"Bunların ilk yarı skoru bilinen {c['n']} tanesinin " if c["n"] != mc["n"] else "Bunların "
     t += (f"{c['hits']} tanesinde ({pct(c['p'])}) \"{c['ad']}\" oldu. Oranı buna yakın (her biri ±%{c['tol']*100:.0f}) {c['yak_n']} maçta "
           f"bu sonuç {pct(c['base'])} çıkmış")
     kat = c["p"] / c["base"] if c["base"] else 0
     t += f"; yani birebir bu oranlarda {kat:.1f} kat daha sık görülmüş." if kat >= 1.3 else "."
+    t += (f" Bültendeki oranı {c['oran']:.2f}; bu oran bu sonuca yaklaşık {pct(1 / c['oran'])} ihtimal veriyor, "
+          f"geçmişe göre tahmini ihtimal {pct(c['tahmin'])}.")
     t += f" Bu oranlı maçlarda en sık skorlar: {mc['skorlar']}."
     if c["n"] < 40: t += f" Not: örnek sayısı ({c['n']}) az, sonuç şanstan etkilenmiş olabilir."
     return t
 
-def sec(havuz, adet, anahtar, kullanildi):
-    out = []
-    for c in sorted(havuz, key=anahtar, reverse=True):
-        if c["mac"]["mac"] in kullanildi: continue
-        if sum(x["kisa"] == c["kisa"] for x in out) >= AYNI_TUR: continue
-        out.append(c); kullanildi.add(c["mac"]["mac"])
-        if len(out) == adet: break
-    return out
 
-def satir(c):
-    return dict(mac=c["mac"]["mac"], idd_ad=c["mac"]["idd_ad"], mbs=c["mbc"], lig=c["mac"]["lig"], saat=c["mac"]["saat"], secim=c["ad"], kisa=c["kisa"],
-                oran=round(c["oran"], 2) if c["oran"] else None, gecmis=round(c["p"], 3), ortalama=round(c["base"], 3), yakin_n=c["yak_n"],
-                olasilik=round(c["tahmin"], 3), n=c["n"], hits=c["hits"], aciklama=aciklama(c))
-
-def kur(havuz, hedef, anahtar, kullanildi, en_cok=8, tavan=None):
-    """Havuzdan farklı maçlardan seçerek toplam bülten oranı hedefe ulaşana kadar ekle; MBS kuralına uy.
-    tavan verilirse toplamı tavanın üstüne çıkaracak seçim atlanır."""
+def kur(havuz, anahtar, kullanildi, hedef=None, tavan=None, adet=None, en_cok=8, ayni_tur=2):
+    """Farklı maçlardan seçim yapar. hedef: toplam oran bu değere ulaşınca dur; adet: bu kadar seçimde dur."""
     out, toplam = [], 1.0
-    for c in sorted(havuz, key=anahtar):
-        if c["mac"]["mac"] in kullanildi or c["mac"]["mac"] in {x["mac"]["mac"] for x in out}: continue
+    for c in sorted(havuz, key=anahtar, reverse=True):
+        if c["mac"]["mac"] in kullanildi or any(x["mac"]["mac"] == c["mac"]["mac"] for x in out): continue
         if tavan and toplam * c["oran"] > tavan: continue
-        if sum(x["kisa"] == c["kisa"] for x in out) >= AYNI_TUR: continue
+        if sum(x["tur"] == c["tur"] for x in out) >= ayni_tur: continue
         out.append(c); toplam *= c["oran"]
-        if toplam >= hedef and len(out) >= max(x["mbc"] for x in out): break
+        if hedef and toplam >= hedef and len(out) >= max(x["mbc"] for x in out): break
+        if adet and len(out) == adet: break
         if len(out) >= en_cok: break
     for c in out: kullanildi.add(c["mac"]["mac"])
     return out
 
-# MANTIK KURALI: bir seçim ancak hem birebir aynı oranlı maçlarda hem de oranı yakın daha geniş maç grubunda
-# destekleniyorsa kupona girer (küçük örnekteki şans eseri sonuçları elemek için).
-# banko: birebir grupta en az %72, geniş grupta en az %62 tutan, oranı 1.15-1.75 arası seçimler; toplam oran 2.00-3.50
-bh = [c for c in adaylar if c["p"] >= 0.72 and c["base"] >= 0.62 and c["tahmin"] >= 0.65 and 1.15 <= c["oran"] <= 1.75]
+
+def satir(c):
+    return dict(mac=c["mac"]["mac"], idd_ad=c["mac"]["idd_ad"], mbs=c["mbc"], lig=c["mac"]["lig"], saat=c["mac"]["saat"], secim=c["ad"],
+                oran=round(c["oran"], 2), gecmis=round(c["p"], 3), ortalama=round(c["base"], 3), yakin_n=c["yak_n"],
+                olasilik=round(c["tahmin"], 3), n=c["n"], hits=c["hits"], aciklama=aciklama(c))
+
+
+# banko: hem birebir hem geniş grupta yüksek tutan, düşük oranlı seçimler; toplam oran 2.00-3.50
 kul = set()
-banko = kur(bh, BANKO_MIN, lambda c: -math.log(c["tahmin"]) / math.log(c["oran"]), kul, en_cok=5, tavan=3.5)
-# sürpriz: oranı 2.5-12 arası, iki grupta da en az %8 görülen ve birebir grupta belirgin sık çıkan sonuçlar;
-# hedef toplam oran 200, en fazla ~500'e kadar
-sh = [c for c in adaylar if 2.5 <= c["oran"] <= 12 and c["base"] >= 0.08 and c["p"] >= 1.3 * c["base"] and c["hits"] >= 5]
-surpriz = kur(sh, SURPRIZ_MIN, lambda c: -(c["tahmin"] * c["oran"]), set(kul), en_cok=6, tavan=SURPRIZ_MIN * 2.5)
-# sistem: oranı 1.6-4.0 arası, iki grupta da en az %30 tutan 6 seçim
-yh = [c for c in adaylar if 1.6 <= c["oran"] <= 4.0 and c["base"] >= 0.30 and c["p"] >= c["base"] and c["tahmin"] >= 0.35]
-sistem = sec(yh, 6, lambda c: c["tahmin"] * c["oran"], {c["mac"]["mac"] for c in surpriz} | {c["mac"]["mac"] for c in banko})
+bh = [c for c in adaylar if c["p"] >= 0.72 and c["base"] >= 0.62 and c["tahmin"] >= 0.65 and 1.15 <= c["oran"] <= 1.75]
+banko = kur(bh, lambda c: math.log(c["oran"]) / -math.log(c["tahmin"]), kul, hedef=BANKO_MIN, tavan=BANKO_MAX, en_cok=5)
+
+# DEĞER: tahmini ihtimal x bülten oranı. 1'in üstü = geçmişe göre oran, sonucun gerçek sıklığından yüksek.
+# sürpriz: oranı 3-25 arası, birebir grupta en az 5 kez görülmüş ve yakın oranlardakinin belirgin üstünde çıkmış,
+# değeri en yüksek seçimler; toplam oran en az 200.
+sh = [c for c in adaylar if 3.0 <= c["oran"] <= 25 and c["hits"] >= 5 and c["p"] >= 1.5 * c["base"] and c["deger"] >= 1.2]
+surpriz = kur(sh, lambda c: c["deger"], set(kul), hedef=SURPRIZ_MIN, tavan=SURPRIZ_MAX, en_cok=6, ayni_tur=1)
+
+# sistem: oranı 2.5-15 arası, değeri yüksek 6 seçim (her biri tek başına da yüksek oranlı)
+yh = [c for c in adaylar if 2.5 <= c["oran"] <= 15 and c["hits"] >= 6 and c["p"] >= 1.3 * c["base"] and c["deger"] >= 1.15]
+sistem = kur(yh, lambda c: c["deger"], {c["mac"]["mac"] for c in surpriz} | set(kul), adet=6, ayni_tur=2)
+if len(sistem) < 6:
+    sistem = kur(yh, lambda c: c["deger"], set(kul), adet=6, ayni_tur=2)
+
 
 def kupon_ozet(s):
-    od = [c["oran"] for c in s]
-    return dict(toplam_oran=round(float(np.prod(od)), 2) if s and all(od) else None,
-                tutma_olasiligi=round(float(np.prod([c["tahmin"] for c in s])), 4) if s else 0)
+    return dict(toplam_oran=round(float(np.prod([c["oran"] for c in s])), 2) if s else None,
+                tutma_olasiligi=round(float(np.prod([c["tahmin"] for c in s])), 5) if s else 0)
+
 
 def sistem_ozet(s):
     ps = [c["tahmin"] for c in s]; od = [c["oran"] for c in s]; nn = len(s)
@@ -186,13 +276,11 @@ def sistem_ozet(s):
     for p in ps: dag = [dag[i] * (1 - p) + (dag[i - 1] * p if i else 0) for i in range(nn + 1)]
     tablo = []
     for t in range(nn + 1):
-        row = dict(tutan=t, olasilik=round(dag[t], 4), en_az=None, en_cok=None)
-        if all(od):
-            kaz = [sum(float(np.prod([od[i] for i in cmb])) for cmb in kombo if set(cmb) <= set(tt))
-                   for tt in itertools.combinations(range(nn), t)]
-            row.update(en_az=round(min(kaz), 2), en_cok=round(max(kaz), 2))
-        tablo.append(row)
+        kaz = [sum(float(np.prod([od[i] for i in cmb])) for cmb in kombo if set(cmb) <= set(tt))
+               for tt in itertools.combinations(range(nn), t)]
+        tablo.append(dict(tutan=t, olasilik=round(dag[t], 4), en_az=round(min(kaz), 2), en_cok=round(max(kaz), 2)))
     return dict(kolon=len(kombo), tablo=tablo)
+
 
 uyari = []
 if not banko or float(np.prod([c["oran"] for c in banko])) < BANKO_MIN: uyari.append("Banko kupon 2,00 toplam orana ulaşamadı.")
@@ -200,19 +288,20 @@ if not surpriz or float(np.prod([c["oran"] for c in surpriz])) < SURPRIZ_MIN: uy
 if len(sistem) < 6: uyari.append("Sistem kuponu için 6 uygun seçim bulunamadı.")
 uyari = " ".join(uyari) or None
 
-sonuc = dict(tarih=GUN, hazirlandi=dt.datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M"),
-             mac_sayisi=incelenen, uygun_mac=incelenen - yetersiz, eslesen=len(IDD), min_n=MIN_N, uyari=uyari,
-             kuponlar=[
-                 dict(ad="Banko kupon", tur="banko", secimler=[satir(c) for c in banko], **kupon_ozet(banko),
-                      not_="Hem birebir aynı oranlı maçlarda hem de benzer oranlı geniş maç grubunda en sık tutan seçimler; toplam oran 2,00 ve üzeri. Hepsinin birden tutması gerekir."),
-                 dict(ad="Sürpriz kupon", tur="sürpriz", secimler=[satir(c) for c in surpriz], **kupon_ozet(surpriz),
-                      not_="Oranı yüksek ama birebir aynı oranlı maçlarda beklenenden sık çıkmış sonuçlar; toplam oran 200 civarı. Tutma ihtimali çok düşük."),
-                 dict(ad="Sistem 2-3-4-5-6", tur="sistem", secimler=[satir(c) for c in sistem], **sistem_ozet(sistem),
-                      not_="6 seçimden 2'li, 3'lü, 4'lü, 5'li ve 6'lı bütün kombinasyonlar. 2 seçim tutsa bile bir kolon kazanır."),
-             ])
-json.dump(sonuc, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+sonuc_json = dict(
+    tarih=GUN, hazirlandi=dt.datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M"),
+    mac_sayisi=incelenen, uygun_mac=incelenen - yetersiz, eslesen=len(IDD), min_n=MIN_N, uyari=uyari,
+    kuponlar=[
+        dict(ad="Banko kupon", tur="banko", secimler=[satir(c) for c in banko], **kupon_ozet(banko),
+             not_="Hem birebir aynı oranlı maçlarda hem de benzer oranlı geniş grupta en sık tutan seçimler; toplam oran 2,00 ve üzeri. Hepsinin birden tutması gerekir."),
+        dict(ad="Sürpriz kupon", tur="sürpriz", secimler=[satir(c) for c in surpriz], **kupon_ozet(surpriz),
+             not_="Yüksek oranlı ve birebir aynı oranlı maçlarda beklenenden çok daha sık çıkmış sonuçlar; toplam oran 200 ve üzeri. Tutma ihtimali çok düşük."),
+        dict(ad="Sistem 2-3-4-5-6", tur="sistem", secimler=[satir(c) for c in sistem], **sistem_ozet(sistem),
+             not_="Her biri yüksek oranlı 6 sürpriz seçimden 2'li, 3'lü, 4'lü, 5'li ve 6'lı bütün kombinasyonlar. 2 seçim tutsa bile bir kolon kazanır."),
+    ])
+json.dump(sonuc_json, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 print(json.dumps(dict(incelenen=incelenen, uygun=incelenen - yetersiz, aday=len(adaylar), uyari=uyari), ensure_ascii=False))
-for k in sonuc["kuponlar"]:
+for k in sonuc_json["kuponlar"]:
     print("\n==", k["ad"], {a: k[a] for a in ("toplam_oran", "tutma_olasiligi", "kolon") if a in k})
     for s in k["secimler"]:
-        print(f"  {s['saat']} {s['mac']} [{s['lig']}] -> {s['kisa']} oran={s['oran']} gecmis={s['hits']}/{s['n']}={s['gecmis']} ort={s['ortalama']} tahmin={s['olasilik']}")
+        print(f"  {s['saat']} {s['mac']} [{s['lig']}] -> {s['secim']} oran={s['oran']} gecmis={s['hits']}/{s['n']}={s['gecmis']} yakın={s['ortalama']} tahmin={s['olasilik']}")
