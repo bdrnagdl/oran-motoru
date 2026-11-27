@@ -1,0 +1,42 @@
+name: Günlük kupon ve site güncelleme
+
+on:
+  schedule:
+    - cron: "37 18 * * *"   # her gün 21:37 (Türkiye saati)
+  workflow_dispatch: {}      # elle de çalıştırılabilir
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  hazirla:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Gerekli paketler
+        run: pip install pandas numpy
+      - name: Veriyi güncelle ve kuponları hazırla
+        run: bash scripts/gunluk.sh
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  yayinla:
+    needs: hazirla
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
