@@ -98,9 +98,9 @@ def degerlendir(s):
     return ("tuttu" if bool(k[1][i]) else "yatti"), skor
 
 
-def sistem_donus(secimler):
+def sistem_donus(secimler, kmin=2):
     n = len(secimler)
-    kolon = [c for r in range(2, n + 1) for c in itertools.combinations(range(n), r)]
+    kolon = [c for r in range(kmin, n + 1) for c in itertools.combinations(range(n), r)]
     return len(kolon), sum(float(np.prod([secimler[i]["oran"] for i in c])) for c in kolon
                            if all(secimler[i]["durum"] == "tuttu" for i in c))
 
@@ -121,7 +121,7 @@ for yol in sorted(glob.glob(os.path.join(ARS, "20*.json"))):
             elif "bilinmiyor" in d:
                 k["durum"] = "bilinmiyor"
             else:
-                kol, don = sistem_donus(k["secimler"])
+                kol, don = sistem_donus(k["secimler"], k.get("sistem_min", 2))
                 k["donus"] = round(don, 2)
                 k["durum"] = "tuttu" if don >= kol else "kismen" if don > 0 else "yatti"
         else:
@@ -129,7 +129,7 @@ for yol in sorted(glob.glob(os.path.join(ARS, "20*.json"))):
                           else "bekliyor" if "bekliyor" in d else "bilinmiyor")
     json.dump(K, open(yol, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     ozet.append(dict(tarih=os.path.basename(yol)[:10], gun=K["tarih"], hazirlandi=K.get("hazirlandi"),
-                     kuponlar=[dict(ad=k["ad"], tur=k["tur"], durum=k["durum"], toplam_oran=k.get("toplam_oran"),
+                     kuponlar=[dict(ad=k["ad"], kod=k.get("kod"), yayinlandi=k.get("yayinlandi"), tur=k["tur"], durum=k["durum"], toplam_oran=k.get("toplam_oran"),
                                     kolon=k.get("kolon"), donus=k.get("donus"), tutan=k.get("tutan"),
                                     secimler=[dict(mac=s.get("idd_ad") or s["mac"], secim=s["secim"], oran=s["oran"],
                                                    durum=s["durum"], skor=s["skor"], saat=s["saat"], lig=s["lig"])
