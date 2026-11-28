@@ -168,14 +168,14 @@
      "fd_dep": "Burton",
      "gun": "28/11/2026",
      "t": 1795878000,
-     "durum": "bekliyor",
-     "skor": null
+     "durum": "yatti",
+     "skor": "İY 0-2 · MS 0-3"
     }
    ],
    "toplam_oran": 256.47,
    "tutma_olasiligi": 0.02842,
    "not_": "Yüksek oranlı ve birebir aynı oranlı maçlarda beklenenden çok daha sık çıkmış sonuçlar; toplam oran 200 ve üzeri. Tutma ihtimali çok düşük.",
-   "durum": "bekliyor"
+   "durum": "yatti"
   },
   {
    "ad": "Sistem 2-3-4-5-6",
@@ -253,8 +253,8 @@
      "fd_dep": "Kilmarnock",
      "gun": "28/11/2026",
      "t": 1795878000,
-     "durum": "bekliyor",
-     "skor": null
+     "durum": "yatti",
+     "skor": "İY 1-1 · MS 1-4"
     },
     {
      "mac": "Elche – Ath Madrid",
@@ -303,8 +303,8 @@
      "fd_dep": "Burnley",
      "gun": "28/11/2026",
      "t": 1795878000,
-     "durum": "bekliyor",
-     "skor": null
+     "durum": "yatti",
+     "skor": "İY 0-0 · MS 0-1"
     },
     {
      "mac": "Preston – Norwich",
@@ -568,14 +568,14 @@
      "fd_dep": "Burnley",
      "gun": "28/11/2026",
      "t": 1795878000,
-     "durum": "bekliyor",
-     "skor": null
+     "durum": "yatti",
+     "skor": "İY 0-0 · MS 0-1"
     }
    ],
    "toplam_oran": 8841.99,
    "tutma_olasiligi": 0.00085,
    "not_": "İlk yarı ile maç sonunun farklı bittiği (1/X, X/1, 2/X gibi) ve birebir aynı oranlı maçlarda beklenenden sık görülen sonuçlar. 3 maçın hepsinin tutması gerekir.",
-   "durum": "bekliyor"
+   "durum": "yatti"
   }
  ]
 }
