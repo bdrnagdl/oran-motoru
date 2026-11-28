@@ -151,21 +151,34 @@ $("kturu").addEventListener("click",e=>{const b=e.target.closest("[data-tur]");i
  $("kadet").value=VARS[TUR].adet;$("kmin").value=VARS[TUR].min;$("ksonuc").innerHTML=""});
 function olustur(karistir){
  if(!HV){$("ksonuc").innerHTML='<div class="empty">Kupon verisi henüz hazır değil.</div>';return}
- const n=+$("kadet").value,min=num($("kmin").value),A=havuz($("kgun").value,min);
+ const n=+$("kadet").value,min=num($("kmin").value),bt=$("kbahis").value;
+ const A=havuz($("kgun").value,min).filter(c=>!bt||c.ad===bt);
  const puan=c=>(TUR==="guvenli"?c.tahmin:c.tahmin*c.oran)*(karistir?0.8+Math.random()*0.4:1);
  const sec=liste=>{const out=[],kul=new Set(),tur={};
   for(const c of liste.map(c=>[puan(c),c]).sort((a,b)=>b[0]-a[0]).map(x=>x[1])){
-   if(kul.has(c.mid)||(tur[c.key]||0)>=2)continue;out.push(c);kul.add(c.mid);tur[c.key]=(tur[c.key]||0)+1;if(out.length===n)break}
+   if(kul.has(c.mid)||(!bt&&(tur[c.key]||0)>=2))continue;out.push(c);kul.add(c.mid);tur[c.key]=(tur[c.key]||0)+1;if(out.length===n)break}
   return out};
  let K=TUR==="surpriz"?sec(A.filter(c=>c.hits>=4&&c.tahmin>c.base)):sec(A);
  if(K.length<n)K=sec(A);
- if(!K.length){$("ksonuc").innerHTML=`<div class="empty">Bu ayarlarla uygun seçim bulunamadı. En az oranı düşür ya da "Bugün ve yarın"ı seç.</div>`;return}
+ if(!K.length){$("ksonuc").innerHTML=`<div class="empty">${bt?`"${esc(bt)}" için bu ayarlarla uygun maç bulunamadı. En az oranı düşür, "Bugün ve yarın"ı seç ya da başka bir bahis türü dene.`:`Bu ayarlarla uygun seçim bulunamadı. En az oranı düşür ya da "Bugün ve yarın"ı seç.`}</div>`;return}
  const macSay=new Set(A.map(c=>c.mid)).size;
- $("ksonuc").innerHTML=`<div class="tekkart">${havuzKart(`${TUR==="surpriz"?"Sürpriz":"Güvenli"} kupon, ${K.length} maç`,`${macSay} uygun maç arasından, her seçimin oranı en az ${o2(min)}.`,K,TUR==="surpriz"?" s":"",
-  K.length<n?`<p class="knote warn">İstediğin ${n} maç için yeterli seçim yok; ${K.length} maçlık kupon hazırlandı. En az oranı düşürmeyi dene.</p>`:"")}<button type="button" class="ikincil" id="kbaska">Başka bir kupon öner</button></div>`;
+ $("ksonuc").innerHTML=`<div class="tekkart">${havuzKart(`${TUR==="surpriz"?"Sürpriz":"Güvenli"} kupon, ${K.length} maç`,`${bt?`Hepsi "${bt}". `:""}${macSay} uygun maç arasından, her seçimin oranı en az ${o2(min)}.`,K,TUR==="surpriz"?" s":"",
+  K.length<n?`<p class="knote warn">İstediğin ${n} maç için yeterli seçim yok; ${K.length} maçlık kupon hazırlandı. En az oranı düşürmeyi${bt?" ya da başka bir bahis türünü":""} dene.</p>`:"")}<button type="button" class="ikincil" id="kbaska">Başka bir kupon öner</button></div>`;
  $("kbaska").addEventListener("click",()=>olustur(true));
 }
 $("kyap").addEventListener("click",()=>olustur(false));
+// bahis türü seçimi: sitedeki havuzda bulunan bütün bahisler, gruplara ayrılmış
+const BGRUP=[["1_1","Maç sonucu"],["2_92","Çifte şans"],["2_101","Toplam gol alt / üst"],["2_89","Karşılıklı gol"],["2_60","İlk yarı gol alt / üst"],["2_730","İki yarıda da 1.5 üst / alt"],["2_729",null],["2_720","İlk yarı karşılıklı gol"],["2_821","2. yarı karşılıklı gol"],["2_866","İlk yarı KG / 2. yarı KG"],["2_88","İlk yarı sonucu"],["2_36","2. yarı sonucu"],["2_90","İlk yarı / maç sonu"],["2_7","Maç sonucu ve alt / üst"],["2_698","Maç sonucu ve karşılıklı gol"],["2_700","Alt / üst ve karşılıklı gol"],["2_724","İlk yarı sonucu ve İY alt / üst"],["2_699","İlk yarı sonucu ve İY karşılıklı gol"],["2_4","Toplam gol aralığı"],["2_91","Toplam gol tek / çift"],["2_719","İlk yarı gol tek / çift"],["2_603","Ev sahibi gol alt / üst"],["2_604","Deplasman gol alt / üst"],["2_722","Ev sahibi ilk yarı gol"],["2_723","Deplasman ilk yarı gol"],["2_861","Takım iki yarıda da gol atar"],["2_862",null],["2_69","Takım iki yarıyı da kazanır"],["2_72",null],["2_727","Takım en az bir yarıyı kazanır"],["2_728",null],["2_6","En çok gol olan yarı"],["2_84",null],["2_85",null],["2_11","Gol farkı"],["2_100","Handikaplı maç sonucu"]];
+(()=>{const d=document.createElement("div");d.className="fl";d.innerHTML='<label class="lb" for="kbahis">Bahis türü</label><select id="kbahis" style="max-width:100%"><option value="">Karışık (en iyileri)</option></select>';$("kadet").closest(".fl").after(d)})();
+function bahisDoldur(){
+ const ad={},sira={};let grup=null;
+ BGRUP.forEach(([k,g],i)=>{if(g)grup=g;ad[k]=grup;sira[k]=i});
+ const G={};
+ for(const g of HV.gunler)for(const x of g.secenekler){const k=x[8],gb=ad[k]||"Diğer";(G[gb]=G[gb]||{s:sira[k]??999,b:new Set()}).b.add(x[1])}
+ const once=$("kbahis").value;
+ $("kbahis").innerHTML='<option value="">Karışık (en iyileri)</option>'+Object.entries(G).sort((a,b)=>a[1].s-b[1].s).map(([g,v])=>`<optgroup label="${esc(g)}">${[...v.b].sort((a,b)=>a.localeCompare(b,"tr",{numeric:true})).map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join("")}</optgroup>`).join("");
+ if(once)$("kbahis").value=once;
+}
 
 // ---- en yakın 4 maçtan hızlı banko ve sürpriz kupon
 (()=>{const d=document.createElement("div");d.innerHTML=`<h3 class="gunbaslik">En yakın 4 maçtan hızlı kupon</h3><p class="note" style="margin:0 0 12px;max-width:72ch">Başlamasına en az süre kalan 4 maçla tek tıkla bir banko, bir sürpriz kupon. Yalnızca geçmişte aynı oranla en az 20 maç oynanmış maçlar arasından seçilir.</p><button type="button" class="kbtn" id="k4yap">En yakın 4 maçtan kupon hazırla</button><div id="k4sonuc"></div>`;$("ksonuc").after(d)})();
@@ -190,7 +203,7 @@ fetch("havuz.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>nul
  HV=j;if(!j){$("knot").textContent="Kupon verisi henüz hazır değil.";$("eilist").innerHTML='<div class="empty">Veri henüz hazır değil.</div>';return}
  const ad=g=>{const iso=g.tarih.split("/").reverse().join("-");return iso===BUGUN?`Bugün (${kisa(iso)})`:iso===YARIN?`Yarın (${kisa(iso)})`:kisa(iso)};
  const opt='<option value="hepsi">Bugün ve yarın</option>'+j.gunler.map((g,i)=>`<option value="${i}">${esc(ad(g))}</option>`).join("");
- $("kgun").innerHTML=opt;$("eigun").innerHTML=opt;enIyi();
+ $("kgun").innerHTML=opt;$("eigun").innerHTML=opt;bahisDoldur();enIyi();
  const simdi=Date.now()/1000;
  $("knot").textContent=`Şu an ${j.gunler.reduce((a,g)=>a+g.maclar.filter(m=>m.t>simdi).length,0)} maç içinden seçim yapılabilir: geçmişte aynı oranla en az 20 maç oynanmış olanlar. Oranlar ${j.guncelleme} itibarıyla.`;
 });
