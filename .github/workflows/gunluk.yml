@@ -2,7 +2,7 @@ name: Günlük kupon ve site güncelleme
 
 on:
   schedule:
-    - cron: "37 * * * *"    # her saat başı +37 dk: oranlar maç saatine yakın güncellensin (bugünün kayıtlı kuponu değişmez)
+    - cron: "*/20 * * * *"  # 20 dakikada bir: kuponu yayınlanma zamanı gelenleri (ilk maça 1 saat kala) yayınlar, listeleri günceller
   workflow_dispatch: {}      # elle de çalıştırılabilir
 
 permissions:
