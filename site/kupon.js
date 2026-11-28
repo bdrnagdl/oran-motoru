@@ -148,6 +148,25 @@ function olustur(karistir){
 }
 $("kyap").addEventListener("click",()=>olustur(false));
 
+// ---- en yakın 4 maçtan hızlı banko ve sürpriz kupon
+(()=>{const d=document.createElement("div");d.innerHTML=`<h3 class="gunbaslik">En yakın 4 maçtan hızlı kupon</h3><p class="note" style="margin:0 0 12px;max-width:72ch">Başlamasına en az süre kalan 4 maçla tek tıkla bir banko, bir sürpriz kupon. Yalnızca geçmişte aynı oranla en az 20 maç oynanmış maçlar arasından seçilir.</p><button type="button" class="kbtn" id="k4yap">En yakın 4 maçtan kupon hazırla</button><div id="k4sonuc"></div>`;$("ksonuc").after(d)})();
+function yakin4(){
+ if(!HV){$("k4sonuc").innerHTML='<div class="empty" style="margin-top:14px">Kupon verisi henüz hazır değil.</div>';return}
+ const A=havuz("hepsi",1.01);
+ const ids=[...new Map(A.map(c=>[c.mid,c.m.t])).entries()].sort((a,b)=>a[1]-b[1]).slice(0,4).map(x=>x[0]);
+ if(!ids.length){$("k4sonuc").innerHTML='<div class="empty" style="margin-top:14px">Şu an başlamamış uygun maç yok. Akşamki güncellemeden sonra tekrar dene.</div>';return}
+ const deger=c=>c.tahmin*c.oran,B=[],S=[];
+ for(const id of ids){
+  const L=A.filter(c=>c.mid===id);
+  const b=L.filter(c=>c.oran>=1.2).sort((x,y)=>y.base-x.base||y.p-x.p)[0];
+  const L2=L.filter(c=>c.oran>=3&&(!b||c.ad!==b.ad));
+  const s=L2.filter(c=>c.hits>=4&&c.tahmin>c.base).sort((x,y)=>deger(y)-deger(x))[0]||L2.sort((x,y)=>deger(y)-deger(x))[0];
+  if(b)B.push(b);if(s)S.push(s);
+ }
+ $("k4sonuc").innerHTML=`<div class="kgrid">${B.length?havuzKart(`Banko, en yakın ${B.length} maç`,"Her maçın, oranı buna yakın geçmiş maçlarda en sık tutan bahsi. Oran en az 1,20.",B,"",""):""}${S.length?havuzKart(`Sürpriz, en yakın ${S.length} maç`,"Her maçın, geçmişte beklenenden sık görülmüş yüksek oranlı bahsi. Oran en az 3,00.",S," s",""):""}</div>`;
+}
+$("k4yap").addEventListener("click",yakin4);
+
 fetch("havuz.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null).then(j=>{
  HV=j;if(!j){$("knot").textContent="Kupon verisi henüz hazır değil.";$("eilist").innerHTML='<div class="empty">Veri henüz hazır değil.</div>';return}
  const ad=g=>{const iso=g.tarih.split("/").reverse().join("-");return iso===BUGUN?`Bugün (${kisa(iso)})`:iso===YARIN?`Yarın (${kisa(iso)})`:kisa(iso)};
