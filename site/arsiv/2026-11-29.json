@@ -1,6 +1,6 @@
 {
  "tarih": "29/11/2026",
- "hazirlandi": "28.11.2026 12:48",
+ "hazirlandi": "28.11.2026 13:28",
  "mac_sayisi": 98,
  "uygun_mac": 20,
  "eslesen": 18,
@@ -263,14 +263,14 @@
      "lig": "İngiltere Premier Lig",
      "saat": "29.11 17:05",
      "secim": "Handikaplı maç sonucu (ev sahibi +2) X",
-     "oran": 6.3,
+     "oran": 6.33,
      "gecmis": 0.233,
      "ortalama": 0.13,
      "yakin_n": 277,
      "olasilik": 0.207,
      "n": 30,
      "hits": 7,
-     "aciklama": "Bu maçın uluslararası 1-X-2 oranları 2.80 – 3.30 – 2.50. Geçmişte birebir aynı oranlarla oynanmış 30 maç var. Bunların 7 tanesinde (%23) \"Handikaplı maç sonucu (ev sahibi +2) X\" oldu. Oranı buna yakın (her biri ±%3) 277 maçta bu sonuç %13 çıkmış; yani birebir bu oranlarda 1.8 kat daha sık görülmüş. Bültendeki oranı 6.30; bu oran bu sonuca yaklaşık %16 ihtimal veriyor, geçmişe göre tahmini ihtimal %21. Bu oranlı maçlarda en sık skorlar: 1-0 (5 kez), 0-2 (4 kez), 1-2 (3 kez). Not: örnek sayısı (30) az, sonuç şanstan etkilenmiş olabilir.",
+     "aciklama": "Bu maçın uluslararası 1-X-2 oranları 2.80 – 3.30 – 2.50. Geçmişte birebir aynı oranlarla oynanmış 30 maç var. Bunların 7 tanesinde (%23) \"Handikaplı maç sonucu (ev sahibi +2) X\" oldu. Oranı buna yakın (her biri ±%3) 277 maçta bu sonuç %13 çıkmış; yani birebir bu oranlarda 1.8 kat daha sık görülmüş. Bültendeki oranı 6.33; bu oran bu sonuca yaklaşık %16 ihtimal veriyor, geçmişe göre tahmini ihtimal %21. Bu oranlı maçlarda en sık skorlar: 1-0 (5 kez), 0-2 (4 kez), 1-2 (3 kez). Not: örnek sayısı (30) az, sonuç şanstan etkilenmiş olabilir.",
      "key": "2_100",
      "sov": "2",
      "sec": "0",
@@ -350,31 +350,31 @@
      "tutan": 2,
      "olasilik": 0.3186,
      "en_az": 14.4,
-     "en_cok": 55.44
+     "en_cok": 55.7
     },
     {
      "tutan": 3,
      "olasilik": 0.1608,
      "en_az": 118.0,
-     "en_cok": 414.49
+     "en_cok": 416.25
     },
     {
      "tutan": 4,
      "olasilik": 0.0446,
      "en_az": 781.26,
-     "en_cok": 2461.82
+     "en_cok": 2472.02
     },
     {
      "tutan": 5,
      "olasilik": 0.0065,
-     "en_az": 5812.8,
-     "en_cok": 12433.59
+     "en_az": 5836.76,
+     "en_cok": 12484.78
     },
     {
      "tutan": 6,
      "olasilik": 0.0004,
-     "en_az": 57173.97,
-     "en_cok": 57173.97
+     "en_az": 57409.04,
+     "en_cok": 57409.04
     }
    ],
    "not_": "Her biri yüksek oranlı 6 sürpriz seçimden 2'li, 3'lü, 4'lü, 5'li ve 6'lı bütün kombinasyonlar. 2 seçim tutsa bile bir kolon kazanır.",
