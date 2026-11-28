@@ -1,0 +1,109 @@
+// Kuponlar: sitenin günlük kuponları (bugün / yarın), geçmiş kuponlar ve "Kupon oluştur".
+{
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const yuz=v=>"%"+(v*100).toLocaleString("tr-TR",{maximumFractionDigits:v<0.01?1:0});
+const say=v=>Number(v).toLocaleString("tr-TR",{maximumFractionDigits:2});
+const isoTR=d=>new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Istanbul"}).format(d);
+const BUGUN=isoTR(new Date()),YARIN=isoTR(new Date(Date.now()+86400000));
+const kisa=iso=>iso.slice(8,10)+"."+iso.slice(5,7);
+const uzun=iso=>new Date(iso+"T12:00:00Z").toLocaleDateString("tr-TR",{day:"numeric",month:"long",year:"numeric",weekday:"long"});
+const DURUM={tuttu:["Tuttu","d-ok"],yatti:["Yattı","d-no"],kismen:["Kısmen geri dönüş","d-mid"],bekliyor:["Sonuç bekleniyor","d-wait"],bilinmiyor:["Sonuç bilinmiyor","d-wait"]};
+const rozet=d=>DURUM[d]?`<span class="dz ${DURUM[d][1]}">${DURUM[d][0]}</span>`:"";
+
+// ---- kupon kartı (hem günün kuponları hem geçmiş için)
+function kart(k,tam){
+ const cls=k.tur==="banko"?"":k.tur==="sistem"?" y":" s";
+ const sec=k.secimler.map(s=>`<div class="sec${s.durum==="tuttu"?" ok":s.durum==="yatti"?" no":""}"><div class="r"><span class="m">${esc(s.idd_ad||s.mac)}</span><span class="o">${s.oran?Number(s.oran).toFixed(2):"–"}</span></div><div class="i">${esc(s.saat)} · ${esc(s.lig)}${s.mbs?" · MBS "+esc(s.mbs):""}</div><span class="pk">${esc(s.secim)}</span> ${rozet(s.durum)}${s.skor?`<div class="i">${esc(s.skor)}</div>`:""}${tam&&s.n?`<div class="i">Birebir aynı oranlı maçlarda: ${s.hits}/${s.n} (${yuz(s.gecmis)}) · yakın oranlarda: ${yuz(s.ortalama)}</div><details><summary>Neden bu seçim?</summary><p>${esc(s.aciklama)}</p></details>`:""}</div>`).join("");
+ let alt="";
+ if(k.tur==="sistem"){
+  let sonuc="";
+  if(k.tutan!=null&&k.durum!=="bekliyor")sonuc=`<p class="knote"><b>${k.tutan}/${k.secimler.length} seçim tuttu</b>${k.donus!=null?` · geri dönüş ${say(k.donus)} birim (${k.kolon} birim yatırılmıştı)`:""}</p>`;
+  const rows=tam&&k.tablo?k.tablo.filter(t=>t.tutan>=1).map(t=>`<tr><td>${t.tutan} maç tutarsa</td><td class="n">${yuz(t.olasilik)}</td><td class="n">${t.en_cok===null?"–":t.en_cok?(t.en_az===t.en_cok?say(t.en_az):say(t.en_az)+" – "+say(t.en_cok)):"0"}</td></tr>`).join(""):"";
+  alt=`<div class="tot"><div><b>${k.kolon??"–"}</b><span>kolon (her kolona 1 birim)</span></div><div><b>${k.secimler.length}</b><span>maç</span></div></div>${sonuc}${rows?`<div class="scroll" style="padding:0 16px 8px"><table class="st"><thead><tr><th>Durum</th><th class="n">İhtimal</th><th class="n">Geri dönüş (birim)</th></tr></thead><tbody>${rows}</tbody></table></div>`:""}`;
+ }else{
+  alt=`<div class="tot"><div><b>${k.toplam_oran?say(k.toplam_oran):"–"}</b><span>toplam oran</span></div>${tam?`<div><b>${yuz(k.tutma_olasiligi||0)}</b><span>tahmini tutma ihtimali</span></div>`:""}</div>`;
+ }
+ return `<article class="kart${cls}"><header><h3>${esc(k.ad)} ${rozet(k.durum)}</h3>${tam?`<p>${esc(k.not_)}</p>`:""}</header>${sec||'<p class="knote" style="padding-top:12px">Bu gün için bu kupona uygun maç bulunamadı.</p>'}${alt}</article>`;
+}
+
+// ---- günün kuponları ve geçmiş
+let IDX=[],FILTRE="tutan";
+function gunGoster(iso){
+ $("kgecmis").hidden=true;$("kgrid").hidden=false;$("kmeta").textContent="Yükleniyor…";$("kuyari").hidden=true;$("kgrid").innerHTML="";
+ fetch(`arsiv/${iso}.json`,{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{
+  $("kmeta").textContent=`${uzun(iso)} maçları. ${j.mac_sayisi} maç incelendi, ${j.uygun_mac??"?"} tanesinde birebir aynı oranlı en az ${j.min_n??20} geçmiş maç vardı. Hazırlanma: ${j.hazirlandi}. Saatler Türkiye saatiyle.`;
+  if(j.uyari){$("kuyari").textContent=j.uyari;$("kuyari").hidden=false}
+  $("kgrid").innerHTML=j.kuponlar.map(k=>kart(k,true)).join("");
+ }).catch(()=>{$("kmeta").textContent="Bu günün kuponları henüz hazır değil."});
+}
+function gecmisGoster(){
+ $("kgrid").hidden=true;$("kuyari").hidden=true;$("kgecmis").hidden=false;
+ const G=IDX.filter(g=>g.tarih<BUGUN);
+ const sayac={};for(const g of G)for(const k of g.kuponlar){const s=sayac[k.ad]=sayac[k.ad]||[0,0];if(["tuttu","yatti","kismen"].includes(k.durum)){s[1]++;if(k.durum==="tuttu")s[0]++}}
+ $("kmeta").textContent=G.length?"Sitenin geçmişte hazırladığı kuponlar ve sonuçları. Sonuçlar maçlardan birkaç gün sonra işlenir.":"Henüz geçmiş kupon yok. Kuponlar her gün otomatik kaydedilir; ilk sonuçlar birkaç gün içinde burada görünecek.";
+ let h=`<div class="ozet">${Object.entries(sayac).map(([a,[t,n]])=>`<div><b>${t}/${n}</b><span>${esc(a)} tuttu</span></div>`).join("")}</div>`;
+ h+=`<div class="seg" role="group" aria-label="Filtre"><button type="button" class="segb${FILTRE==="tutan"?" on":""}" data-f="tutan">Tutan kuponlar</button><button type="button" class="segb${FILTRE==="hepsi"?" on":""}" data-f="hepsi">Bütün kuponlar</button></div>`;
+ let bos=true;
+ for(const g of G){
+  const K=g.kuponlar.filter(k=>k.secimler.length&&(FILTRE==="hepsi"||k.durum==="tuttu"||k.durum==="kismen"));
+  if(!K.length)continue;bos=false;
+  h+=`<h3 class="mgun">${esc(uzun(g.tarih))}</h3><div class="kgrid">${K.map(k=>kart(k,false)).join("")}</div>`;
+ }
+ if(bos&&G.length)h+=`<div class="empty" style="margin-top:14px">${FILTRE==="tutan"?"Henüz tutan kupon yok.":"Gösterilecek kupon yok."}</div>`;
+ $("kgecmis").innerHTML=h;
+}
+$("kgecmis").addEventListener("click",e=>{const b=e.target.closest("[data-f]");if(!b)return;FILTRE=b.dataset.f;gecmisGoster()});
+function sekmeler(){
+ const T=[];
+ if(IDX.some(g=>g.tarih===BUGUN))T.push([BUGUN,`Bugün · ${kisa(BUGUN)}`]);
+ if(IDX.some(g=>g.tarih===YARIN))T.push([YARIN,`Yarın · ${kisa(YARIN)}`]);
+ T.push(["gecmis","Geçmiş kuponlar"]);
+ $("ktabs").innerHTML=T.map(([v,l],i)=>`<button type="button" role="tab" class="tab${i===0?" on":""}" data-v="${v}" aria-selected="${i===0}">${esc(l)}</button>`).join("");
+ sec(T[0][0]);
+}
+function sec(v){
+ for(const b of $("ktabs").children){const on=b.dataset.v===v;b.classList.toggle("on",on);b.setAttribute("aria-selected",on)}
+ v==="gecmis"?gecmisGoster():gunGoster(v);
+}
+$("ktabs").addEventListener("click",e=>{const b=e.target.closest(".tab");if(b)sec(b.dataset.v)});
+fetch("arsiv/index.json",{cache:"no-store"}).then(r=>r.ok?r.json():[]).catch(()=>[]).then(j=>{IDX=j;sekmeler()});
+
+// ---- kupon oluştur
+let HV=null,TUR="guvenli";
+const VARS={guvenli:{adet:3,min:"1,20"},surpriz:{adet:5,min:"3,00"}};
+const num=v=>{const x=parseFloat(String(v).replace(",","."));return isFinite(x)?x:0};
+$("kadet").innerHTML=[...Array(10)].map((_,i)=>`<option${i+1===3?" selected":""}>${i+1}</option>`).join("");
+$("kturu").addEventListener("click",e=>{const b=e.target.closest("[data-tur]");if(!b)return;TUR=b.dataset.tur;
+ for(const x of $("kturu").children)x.classList.toggle("on",x===b);
+ $("kadet").value=VARS[TUR].adet;$("kmin").value=VARS[TUR].min;$("ksonuc").innerHTML=""});
+function olustur(karistir){
+ if(!HV){$("ksonuc").innerHTML='<div class="empty">Kupon verisi henüz hazır değil.</div>';return}
+ const n=+$("kadet").value,min=num($("kmin").value),gs=$("kgun").value,simdi=Date.now()/1000+300;
+ let A=[];
+ HV.gunler.forEach((g,gi)=>{if(gs!=="hepsi"&&+gs!==gi)return;
+  for(const s of g.secenekler){const m=g.maclar[s[0]];if(m.t<=simdi||s[2]<min)continue;
+   A.push({m,mid:gi+"|"+s[0],ad:s[1],oran:s[2],mbc:s[3],hits:s[4],n:s[5],base:s[6],tahmin:s[7],key:s[8]})}});
+ const puan=c=>(TUR==="guvenli"?c.tahmin:c.tahmin*c.oran)*(karistir?0.8+Math.random()*0.4:1);
+ const sec=liste=>{const out=[],kul=new Set(),tur={};
+  for(const c of liste.map(c=>[puan(c),c]).sort((a,b)=>b[0]-a[0]).map(x=>x[1])){
+   if(kul.has(c.mid)||(tur[c.key]||0)>=2)continue;out.push(c);kul.add(c.mid);tur[c.key]=(tur[c.key]||0)+1;if(out.length===n)break}
+  return out};
+ let K=TUR==="surpriz"?sec(A.filter(c=>c.hits>=4&&c.tahmin>c.base)):sec(A);
+ if(K.length<n)K=sec(A);
+ const macSay=new Set(A.map(c=>c.mid)).size;
+ if(!K.length){$("ksonuc").innerHTML=`<div class="empty">Bu ayarlarla uygun seçim bulunamadı. En az oranı düşür ya da "Bugün ve yarın"ı seç.</div>`;return}
+ const top=K.reduce((a,c)=>a*c.oran,1),ih=K.reduce((a,c)=>a*c.tahmin,1),mbs=Math.max(...K.map(c=>c.mbc));
+ const satir=c=>`<div class="sec"><div class="r"><span class="m">${esc(c.m.ad)}</span><span class="o">${c.oran.toFixed(2)}</span></div><div class="i">${esc(c.m.saat)} · ${esc(c.m.lig)} · MBS ${c.mbc}</div><span class="pk">${esc(c.ad)}</span><div class="i">Birebir aynı oranlı ${c.n} maçın ${c.hits} tanesinde oldu (${yuz(c.hits/c.n)}) · yakın oranlarda ${yuz(c.base)}</div><details><summary>Neden bu seçim?</summary><p>Bu maçın uluslararası 1-X-2 oranları ${c.m.oran.map(v=>v.toFixed(2)).join(" – ")}. Geçmişte birebir aynı oranlarla oynanmış maçların ${c.n} tanesinde bu seçimin sonucu belli; ${c.hits} tanesinde "${esc(c.ad)}" oldu. Oranı buna yakın maçlarda bu sonuç ${yuz(c.base)} çıkmış. Az örnekten aşırı etkilenmemek için ikisi harmanlanınca tahmini ihtimal ${yuz(c.tahmin)}; bültendeki ${c.oran.toFixed(2)} oranı ise yaklaşık ${yuz(1/c.oran)} ihtimal veriyor. Bu oranlı maçlarda en sık skorlar: ${esc(c.m.skorlar)}.</p></details></div>`;
+ $("ksonuc").innerHTML=`<article class="kart${TUR==="surpriz"?" s":""}" style="max-width:640px"><header><h3>${TUR==="surpriz"?"Sürpriz":"Güvenli"} kupon · ${K.length} maç</h3><p>${macSay} uygun maç arasından, her seçimin oranı en az ${min.toFixed(2)}.</p></header>${K.map(satir).join("")}<div class="tot"><div><b>${say(top)}</b><span>toplam oran</span></div><div><b>${yuz(ih)}</b><span>tahmini tutma ihtimali</span></div></div>${K.length<n?`<p class="knote warn">İstediğin ${n} maç için yeterli seçim yok; ${K.length} maçlık kupon hazırlandı. En az oranı düşürmeyi dene.</p>`:""}${K.length<mbs?`<p class="knote warn">Dikkat: bu kupondaki bir maçın MBS'si ${mbs}; bültende oynamak için kuponda en az ${mbs} maç olmalı.</p>`:""}<p class="knote">Oranlar en son ${esc(HV.guncelleme)} saatinde bültenden alındı; oynamadan önce güncel oranı kontrol et. Bu bir tahmindir, kesinlik vermez.</p><div style="padding:0 16px 16px"><button type="button" class="more" id="kbaska">Başka bir kupon öner</button></div></article>`;
+ $("kbaska").addEventListener("click",()=>olustur(true));
+}
+$("kyap").addEventListener("click",()=>olustur(false));
+fetch("havuz.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null).then(j=>{
+ HV=j;if(!j){$("knot").textContent="Kupon verisi henüz hazır değil.";return}
+ const ad=g=>{const iso=g.tarih.split("/").reverse().join("-");return iso===BUGUN?`Bugün (${kisa(iso)})`:iso===YARIN?`Yarın (${kisa(iso)})`:kisa(iso)};
+ $("kgun").innerHTML='<option value="hepsi">Bugün ve yarın</option>'+j.gunler.map((g,i)=>`<option value="${i}">${esc(ad(g))}</option>`).join("");
+ const simdi=Date.now()/1000;
+ $("knot").textContent=`Şu an ${j.gunler.reduce((a,g)=>a+g.maclar.filter(m=>m.t>simdi).length,0)} maç içinden seçim yapılabilir (geçmişte birebir aynı oranla en az 20 maç oynanmış olanlar). Oranlar ${j.guncelleme} itibarıyla.`;
+});
+}
