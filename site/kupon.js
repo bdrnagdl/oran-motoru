@@ -115,8 +115,9 @@ function enIyi(){
  for(const c of A){const b=best[c.mid];if(!b||deger(c)>deger(b)||(deger(c)===deger(b)&&(ikinci(c)>ikinci(b)||(ikinci(c)===ikinci(b)&&c.n>b.n))))best[c.mid]=c}
  const R=Object.values(best).sort((a,b)=>deger(b)-deger(a)||ikinci(b)-ikinci(a)||b.n-a.n);
  if(!R.length){$("eilist").innerHTML='<div class="empty">Bu ayarlarla maç yok. En az oranı düşür ya da günü değiştir.</div>';return}
+ EIR=R;
  const b1=ayni?"Aynı oranlı geçmiş maçlarda":"Yakın oranlı geçmiş maçlarda",b2=ayni?"Yakın oranlarda":"Aynı oranlı maçlarda";
- $("eilist").innerHTML=`<p class="note" style="margin:0 0 8px">${R.length} maç; ${ayni?"aynı oranlı geçmiş maçlarda":"yakın oranlı geçmiş maçlarda"} en sık tutandan aşağı doğru.</p><div class="scroll"><table class="tablo eit"><thead><tr><th>Saat</th><th>Maç</th><th>En sık tutan bahis</th><th class="n">${b1}</th><th class="n gizle">${b2}</th><th class="n">Oran</th></tr></thead><tbody>${R.map(c=>`<tr>
+ $("eilist").innerHTML=`<p class="note" style="margin:0 0 8px">${R.length} maç; ${ayni?"aynı oranlı geçmiş maçlarda":"yakın oranlı geçmiş maçlarda"} en sık tutandan aşağı doğru. Bir maça dokunursan o oranlarla oynanmış geçmiş maçların sonuçları açılır.</p><div class="scroll"><table class="tablo eit"><thead><tr><th>Saat</th><th>Maç</th><th>En sık tutan bahis</th><th class="n">${b1}</th><th class="n gizle">${b2}</th><th class="n">Oran</th></tr></thead><tbody>${R.map((c,i)=>`<tr class="eirow" data-i="${i}" tabindex="0" aria-label="${esc(c.m.ad)}: geçmiş aynı oranlı maçları göster">
  <td class="saat">${esc(c.m.saat)}</td>
  <td><b>${esc(c.m.ad)}</b><small>${esc(c.m.lig)}</small></td>
  <td><span class="tag">${esc(c.ad)}</span></td>
@@ -127,6 +128,20 @@ function enIyi(){
 }
 (()=>{const d=document.createElement("div");d.className="fl";d.innerHTML='<label class="lb" for="eisira">Sırala</label><select id="eisira"><option value="ayni">Aynı oranlı maçlardaki başarıya göre</option><option value="yakin">Yakın oranlı maçlardaki başarıya göre</option></select>';$("eimin").closest(".fl").after(d)})();
 for(const k of ["eigun","eimin","eisira"])$(k).addEventListener("input",enIyi);
+// listedeki maça dokununca: o maçın oranlarıyla geçmiş maç aramasını aç
+let EIR=[];
+(()=>{const st=document.createElement("style");st.textContent=".eit .eirow{cursor:pointer}.eit .eirow:hover td,.eit .eirow:focus-visible td{background:rgba(31,122,77,.08)}.eit .eirow:focus-visible{outline:2px solid var(--saha);outline-offset:-2px}";document.head.appendChild(st)})();
+function eiAc(tr){
+ const c=EIR[+tr.dataset.i];if(!c)return;
+ const o=c.m.oran.map(v=>Number(v).toFixed(2).replace(".",","));
+ ["o1","ox","o2"].forEach((id,i)=>{const el=$(id);el.value=o[i];el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}))});
+ const s=$("secili");
+ s.innerHTML=`<b>${esc(c.m.ad)}</b><span class="note">${esc(c.m.lig)}, ${esc(c.m.saat)}</span><p>Bu maçın uluslararası oranı ${o.join(" – ")}. Aşağıda bu oranlarla oynanmış geçmiş maçların sonuçları var. Listede gördüğün bahis "${esc(c.ad)}": aynı oranlı ${c.n} maçın ${c.hits} tanesinde tuttu.</p>`;
+ s.hidden=false;
+ setTimeout(()=>document.getElementById("sonuc").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"}),250);
+}
+$("eilist").addEventListener("click",e=>{if(e.target.closest("button,a,details"))return;const tr=e.target.closest(".eirow");if(tr)eiAc(tr)});
+$("eilist").addEventListener("keydown",e=>{if(e.key!=="Enter"&&e.key!==" ")return;const tr=e.target.closest(".eirow");if(tr){e.preventDefault();eiAc(tr)}});
 
 // ---- kupon oluştur
 const VARS={guvenli:{adet:3,min:"1,20"},surpriz:{adet:5,min:"3,00"}};
