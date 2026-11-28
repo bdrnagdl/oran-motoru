@@ -61,7 +61,7 @@ function gecmisGoster(){
  $("kgrid").hidden=true;$("kuyari").hidden=true;$("kgecmis").hidden=false;
  const G=IDX.filter(g=>g.tarih<BUGUN);
  const sayac={};for(const g of G)for(const k of g.kuponlar){const s=sayac[k.ad]=sayac[k.ad]||[0,0];if(["tuttu","yatti","kismen"].includes(k.durum)){s[1]++;if(k.durum==="tuttu")s[0]++}}
- $("kmeta").textContent=G.length?"Sitenin geçmişte hazırladığı kuponlar ve sonuçları. Sonuçlar maçlardan birkaç gün sonra işlenir.":"Henüz geçmiş kupon yok. Kuponlar her gün otomatik kaydedilir; ilk sonuçlar birkaç gün içinde burada görünecek.";
+ $("kmeta").textContent=G.length?"Sitenin geçmişte hazırladığı kuponlar ve sonuçları. Sonuçlar maç bittikten yaklaşık yarım saat sonra işlenir.":"Henüz geçmiş kupon yok. Kuponlar her gün otomatik kaydedilir; sonuçlar maç bittikten yaklaşık yarım saat sonra işlenir.";
  let h=G.length?`<div class="ozet">${Object.entries(sayac).map(([a,[t,n]])=>`<div><b>${t}/${n}</b><span>${esc(a)} tuttu</span></div>`).join("")}</div>
  <div class="seg" role="group" aria-label="Filtre"><button type="button" class="segb${FILTRE==="tutan"?" on":""}" data-f="tutan">Tutan kuponlar</button><button type="button" class="segb${FILTRE==="hepsi"?" on":""}" data-f="hepsi">Bütün kuponlar</button></div>`:"";
  let bos=true;
