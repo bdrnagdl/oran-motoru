@@ -108,14 +108,14 @@
      "fd_dep": "Andorra",
      "gun": "28/11/2026",
      "t": 1795870800,
-     "durum": "bekliyor",
-     "skor": null
+     "durum": "yatti",
+     "skor": "İY 0-1 · MS 4-1"
     }
    ],
    "toplam_oran": 2.34,
    "tutma_olasiligi": 0.53063,
    "not_": "Hem birebir aynı oranlı maçlarda hem de benzer oranlı geniş grupta en sık tutan seçimler; toplam oran 2,00 ve üzeri. Hepsinin birden tutması gerekir.",
-   "durum": "bekliyor"
+   "durum": "yatti"
   },
   {
    "ad": "Sürpriz kupon",
@@ -328,8 +328,8 @@
      "fd_dep": "Norwich",
      "gun": "28/11/2026",
      "t": 1795869000,
-     "durum": "bekliyor",
-     "skor": null
+     "durum": "yatti",
+     "skor": "İY 0-0 · MS 1-1"
     }
    ],
    "kolon": 57,
@@ -457,8 +457,8 @@
      "fd_dep": "Norwich",
      "gun": "28/11/2026",
      "t": 1795869000,
-     "durum": "bekliyor",
-     "skor": null
+     "durum": "yatti",
+     "skor": "İY 0-0 · MS 1-1"
     }
    ],
    "kolon": 4,
