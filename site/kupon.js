@@ -99,10 +99,27 @@ function olustur(karistir){
  $("kbaska").addEventListener("click",()=>olustur(true));
 }
 $("kyap").addEventListener("click",()=>olustur(false));
+
+// ---- maç maç en başarılı bahis: birebir aynı oranlı geçmiş maçlarda en sık tutan bahis
+function enIyi(){
+ if(!HV)return;
+ const gs=$("eigun").value,min=num($("eimin").value)||1,simdi=Date.now()/1000+300,R=[];
+ HV.gunler.forEach((g,gi)=>{if(gs!=="hepsi"&&+gs!==gi)return;
+  const best={};
+  for(const s of g.secenekler){const m=g.maclar[s[0]];if(m.t<=simdi||s[2]<min)continue;
+   const p=s[4]/s[5],b=best[s[0]];
+   if(!b||p>b.p||(p===b.p&&s[2]>b.oran))best[s[0]]={m,p,ad:s[1],oran:s[2],mbc:s[3],hits:s[4],n:s[5],base:s[6]}}
+  R.push(...Object.values(best))});
+ R.sort((a,b)=>b.p-a.p||b.n-a.n);
+ if(!R.length){$("eilist").innerHTML='<div class="empty">Bu ayarlarla maç yok. En az oranı düşür ya da günü değiştir.</div>';return}
+ $("eilist").innerHTML=`<p class="note" style="margin:0 0 8px">${R.length} maç, en başarılıdan aşağı doğru.</p><div class="scroll"><table class="stack"><thead><tr><th>Saat</th><th>Maç</th><th>En başarılı bahis</th><th class="n">Aynı oranlı maçlarda</th><th class="n">Yakın oranlarda</th><th class="n">Bülten oranı</th></tr></thead><tbody>${R.map(c=>`<tr><td class="d">${esc(c.m.saat)}</td><td><b>${esc(c.m.ad)}</b><br><span class="note" style="font-size:13px">${esc(c.m.lig)}</span></td><td><span class="tag">${esc(c.ad)}</span></td><td class="n"><b>${yuz(c.p)}</b> <span class="note" style="font-size:13px">(${c.hits}/${c.n})</span></td><td class="n">${yuz(c.base)}</td><td class="n"><b>${c.oran.toFixed(2)}</b>${c.mbc>1?` <span class="note" style="font-size:13px">MBS ${c.mbc}</span>`:""}</td></tr>`).join("")}</tbody></table></div>`;
+}
+for(const k of ["eigun","eimin"])$(k).addEventListener("input",enIyi);
 fetch("havuz.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null).then(j=>{
- HV=j;if(!j){$("knot").textContent="Kupon verisi henüz hazır değil.";return}
+ HV=j;if(!j){$("knot").textContent="Kupon verisi henüz hazır değil.";$("eilist").innerHTML='<div class="empty">Veri henüz hazır değil.</div>';return}
  const ad=g=>{const iso=g.tarih.split("/").reverse().join("-");return iso===BUGUN?`Bugün (${kisa(iso)})`:iso===YARIN?`Yarın (${kisa(iso)})`:kisa(iso)};
  $("kgun").innerHTML='<option value="hepsi">Bugün ve yarın</option>'+j.gunler.map((g,i)=>`<option value="${i}">${esc(ad(g))}</option>`).join("");
+ $("eigun").innerHTML=$("kgun").innerHTML;enIyi();
  const simdi=Date.now()/1000;
  $("knot").textContent=`Şu an ${j.gunler.reduce((a,g)=>a+g.maclar.filter(m=>m.t>simdi).length,0)} maç içinden seçim yapılabilir (geçmişte birebir aynı oranla en az 20 maç oynanmış olanlar). Oranlar ${j.guncelleme} itibarıyla.`;
 });
