@@ -9,9 +9,6 @@ import sys, os, json, glob, itertools, datetime as dt
 import numpy as np, pandas as pd
 
 DB, ARS = sys.argv[1], sys.argv[2]
-kod = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kupon.py"), encoding="utf-8").read()
-exec(kod[kod.index("# ---- veritabanı"):kod.index("_ON = {}")])   # db, katalog(), hasHT ...
-
 os.makedirs(ARS, exist_ok=True)
 args = sys.argv[3:]
 for i in range(0, len(args), 2):
@@ -26,6 +23,48 @@ for i in range(0, len(args), 2):
         print("arşive yazıldı:", hedef)
     else:
         print("zaten var, korunuyor:", hedef)
+
+# ---- hızlı sonuçlar: bültenin kendi sonuç servisi (maç biter bitmez güncellenir).
+# Sonucu bekleyen seçimlerin bülten maç numaralarıyla sonuçları alınır ve geçmiş maç listesine eklenir;
+# bulunamazsa football-data sonuçları kullanılır.
+import urllib.request
+KESIN = ("tuttu", "yatti")
+bekleyen, gunler = [], set()
+for yol in glob.glob(os.path.join(ARS, "20*.json")):
+    for k in json.load(open(yol, encoding="utf-8"))["kuponlar"]:
+        for s in k["secimler"]:
+            if s.get("idd_id") and s.get("durum") not in KESIN:
+                g = dt.datetime.strptime(s["gun"], "%d/%m/%Y")
+                if (dt.datetime.now() - g).days > 7: continue
+                bekleyen.append(s)
+                gunler.update((g + dt.timedelta(days=d)).strftime("%Y%m%d") for d in (-1, 0, 1))
+SONUC = {}
+for g in sorted(gunler):
+    try:
+        req = urllib.request.Request(f"https://statisticsv2.iddaa.com/live-results?sportId=1&date={g}",
+                                     headers={"User-Agent": "Mozilla/5.0 (oran-motoru)", "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            veri = json.loads(r.read().decode("utf-8"))["data"]
+    except Exception as e:  # noqa: BLE001
+        print("sonuç servisi alınamadı:", g, e); continue
+    for k, sc in (veri.get("sc") or {}).items():
+        ev, dep = sc.get("ht") or {}, sc.get("at") or {}
+        if sc.get("s") == 6 and "r" in ev and "r" in dep:          # 6 = maç bitti
+            SONUC[int(k)] = (ev["r"], dep["r"], ev.get("ht"), dep.get("ht"))
+ekler = []
+for s in bekleyen:
+    r = SONUC.get(int(s["idd_id"]))
+    if r:
+        ekler.append(dict(src="I", league="IDD", season="", date=dt.datetime.strptime(s["gun"], "%d/%m/%Y").strftime("%Y-%m-%d"),
+                          home=s["fd_ev"], away=s["fd_dep"], fthg=r[0], ftag=r[1], hthg=r[2], htag=r[3]))
+print(f"bülten sonuç servisi: {len(SONUC)} biten maç, bekleyen {len(bekleyen)} seçimden {len(ekler)} tanesinin sonucu bulundu")
+SUTUN = ["src", "league", "season", "date", "home", "away", "fthg", "ftag", "hthg", "htag", "b365ch", "b365cd", "b365ca"]
+taban = pd.read_csv(DB) if os.path.exists(DB) else pd.DataFrame(columns=SUTUN)
+pd.concat([taban, pd.DataFrame(ekler, columns=SUTUN)], ignore_index=True).to_csv("/tmp/arsiv_db.csv", index=False)
+DB = "/tmp/arsiv_db.csv"
+
+kod = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kupon.py"), encoding="utf-8").read()
+exec(kod[kod.index("# ---- veritabanı"):kod.index("_ON = {}")])   # db, katalog(), hasHT ...
 
 # ---- sonuçlar
 tarihler = pd.to_datetime(db.date).dt.strftime("%Y-%m-%d").to_numpy()
@@ -42,6 +81,8 @@ def bul(s):
 
 
 def degerlendir(s):
+    if s.get("durum") in KESIN:            # sonucu kesinleşmiş seçim bir daha değişmez
+        return s["durum"], s.get("skor")
     if "key" not in s:
         return "bilinmiyor", None
     i = bul(s)
