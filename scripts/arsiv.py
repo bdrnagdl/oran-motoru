@@ -33,12 +33,12 @@ bekleyen, gunler = [], set()
 for yol in glob.glob(os.path.join(ARS, "20*.json")):
     for k in json.load(open(yol, encoding="utf-8"))["kuponlar"]:
         for s in k["secimler"]:
-            if s.get("idd_id") and s.get("durum") not in KESIN:
+            if (s.get("idd_id") or s.get("idd_ad")) and s.get("fd_ev") and s.get("durum") not in KESIN:
                 g = dt.datetime.strptime(s["gun"], "%d/%m/%Y")
                 if (dt.datetime.now() - g).days > 7: continue
                 bekleyen.append(s)
                 gunler.update((g + dt.timedelta(days=d)).strftime("%Y%m%d") for d in (-1, 0, 1))
-SONUC = {}
+SONUC, AD = {}, {}
 for g in sorted(gunler):
     try:
         req = urllib.request.Request(f"https://statisticsv2.iddaa.com/live-results?sportId=1&date={g}",
@@ -47,13 +47,16 @@ for g in sorted(gunler):
             veri = json.loads(r.read().decode("utf-8"))["data"]
     except Exception as e:  # noqa: BLE001
         print("sonuç servisi alınamadı:", g, e); continue
+    for e in veri.get("events") or []:            # eski kuponlar için: bültendeki maç adıyla eşleştirme
+        AD[f"{e.get('homeTeam')} – {e.get('awayTeam')}"] = e.get("eventId")
     for k, sc in (veri.get("sc") or {}).items():
         ev, dep = sc.get("ht") or {}, sc.get("at") or {}
         if sc.get("s") == 6 and "r" in ev and "r" in dep:          # 6 = maç bitti
             SONUC[int(k)] = (ev["r"], dep["r"], ev.get("ht"), dep.get("ht"))
 ekler = []
 for s in bekleyen:
-    r = SONUC.get(int(s["idd_id"]))
+    eid = s.get("idd_id") or AD.get(s.get("idd_ad"))
+    r = SONUC.get(int(eid)) if eid else None
     if r:
         ekler.append(dict(src="I", league="IDD", season="", date=dt.datetime.strptime(s["gun"], "%d/%m/%Y").strftime("%Y-%m-%d"),
                           home=s["fd_ev"], away=s["fd_dep"], fthg=r[0], ftag=r[1], hthg=r[2], htag=r[3]))
