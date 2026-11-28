@@ -282,6 +282,15 @@ sistem = kur(yh, lambda c: c["deger"], {c["mac"]["mac"] for c in surpriz} | set(
 if len(sistem) < 6:
     sistem = kur(yh, lambda c: c["deger"], set(kul), adet=6, ayni_tur=2)
 
+# iki yarı 1.5 üst: aynı oranlı maçlarda "ilk yarı 1.5 üst ve 2. yarı 1.5 üst" en sık olan 3 maç, sistem 2-3
+yari = kur([c for c in adaylar if c["tur"] == "2_730" and c["sec"] == "Evet" and c["hits"] >= 3],
+           lambda c: c["tahmin"], set(), adet=3, ayni_tur=3)
+
+# İY/MS: ilk yarı ile maç sonunun farklı bittiği sonuçlar (1/X, X/1, 2/X, X/2, 1/2, 2/1), değeri en yüksek 3 maç
+DONUS = {"1/0", "0/1", "2/0", "0/2", "1/2", "2/1"}
+iyms = kur([c for c in adaylar if c["tur"] == "2_90" and c["sec"] in DONUS and c["hits"] >= 3],
+           lambda c: c["deger"], set(), adet=3, ayni_tur=3)
+
 
 def kupon_ozet(s):
     return dict(toplam_oran=round(float(np.prod([c["oran"] for c in s])), 2) if s else None,
@@ -305,6 +314,8 @@ uyari = []
 if not banko or float(np.prod([c["oran"] for c in banko])) < BANKO_MIN: uyari.append("Banko kupon 2,00 toplam orana ulaşamadı.")
 if not surpriz or float(np.prod([c["oran"] for c in surpriz])) < SURPRIZ_MIN: uyari.append("Sürpriz kupon 200 toplam orana ulaşamadı.")
 if len(sistem) < 6: uyari.append("Sistem kuponu için 6 uygun seçim bulunamadı.")
+if len(yari) < 3: uyari.append("İki yarı 1.5 üst kuponu için 3 uygun maç bulunamadı.")
+if len(iyms) < 3: uyari.append("İY/MS kuponu için 3 uygun maç bulunamadı.")
 uyari = " ".join(uyari) or None
 
 sonuc_json = dict(
@@ -317,6 +328,10 @@ sonuc_json = dict(
              not_="Yüksek oranlı ve birebir aynı oranlı maçlarda beklenenden çok daha sık çıkmış sonuçlar; toplam oran 200 ve üzeri. Tutma ihtimali çok düşük."),
         dict(ad="Sistem 2-3-4-5-6", tur="sistem", secimler=[satir(c) for c in sistem], **sistem_ozet(sistem),
              not_="Her biri yüksek oranlı 6 sürpriz seçimden 2'li, 3'lü, 4'lü, 5'li ve 6'lı bütün kombinasyonlar. 2 seçim tutsa bile bir kolon kazanır."),
+        dict(ad="İki yarı 1.5 üst · Sistem 2-3", tur="sistem", secimler=[satir(c) for c in yari], **sistem_ozet(yari),
+             not_="Birebir aynı oranlı maçlarda hem ilk yarıda hem ikinci yarıda 2 ve üzeri gol en sık görülen 3 maç. 2'li ve 3'lü kombinasyonlar (4 kolon); 2 maç tutsa bir kolon kazanır."),
+        dict(ad="İY/MS kuponu", tur="iyms", secimler=[satir(c) for c in iyms], **kupon_ozet(iyms),
+             not_="İlk yarı ile maç sonunun farklı bittiği (1/X, X/1, 2/X gibi) ve birebir aynı oranlı maçlarda beklenenden sık görülen sonuçlar. 3 maçın hepsinin tutması gerekir."),
     ])
 json.dump(sonuc_json, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 print(json.dumps(dict(incelenen=incelenen, uygun=incelenen - yetersiz, aday=len(adaylar), uyari=uyari), ensure_ascii=False))
