@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Her gün: veriyi güncelle, bugünün ve yarının kuponlarını hazırla, arşivi ve sonuçları güncelle.
+# Her 20 dakikada bir: veriyi güncelle, kuponları seç, zamanı gelenleri yayınla, sonuçları ve listeleri güncelle.
 set -euo pipefail
 export TZ=Europe/Istanbul
 SIMDI=$(date +"%Y-%m-%d %H:%M")
@@ -17,22 +17,10 @@ for ISO in "$BUGUN_ISO" "$YARIN_ISO"; do
     "veri/bulten_$ISO.json" "veri/havuz_$ISO.json"
 done
 
-# Günün kuponları, günün ilk uygun maçına 95 dakikadan az kaldığında (yaklaşık 1 saat önce) BİR KEZ kaydedilir
-# ve bir daha hiç değişmez. Saatlik çalışmalar yalnızca listeleri, "kupon oluştur" havuzunu ve sonuçları günceller.
-YAYIN=$(python3 - "veri/uygun_$BUGUN_ISO.json" <<'PYEOF'
-import sys, json, datetime as dt
-simdi = dt.datetime.now(dt.timezone.utc)
-t = [dt.datetime.fromisoformat(x["utc"]).replace(tzinfo=dt.timezone.utc) for x in json.load(open(sys.argv[1], encoding="utf-8"))]
-t = [x for x in t if x > simdi]
-print(1 if t and (min(t) - simdi).total_seconds() <= 95 * 60 else 0)
-PYEOF
-)
-echo "Bugünün kuponunu yayınlama zamanı mı: $YAYIN"
-if [ "$YAYIN" = "1" ]; then
-  python3 scripts/arsiv.py veri/kapanis_maclar.csv site/arsiv "veri/kupon_$BUGUN_ISO.json" 0
-else
-  python3 scripts/arsiv.py veri/kapanis_maclar.csv site/arsiv
-fi
+# Günün 6 kuponu: her biri ilk maçına 1 saatten az kaldığında BİR KEZ yayınlanır (o anki, kapanışa en yakın oranlarla)
+# ve bir daha hiç değişmez. Sonra arşivdeki bütün kuponların sonuçları güncellenir.
+python3 scripts/yayinla.py "veri/kupon_$BUGUN_ISO.json" site/arsiv
+python3 scripts/arsiv.py veri/kapanis_maclar.csv site/arsiv
 
 # Kupon oluşturma havuzu (bugün + yarın)
 python3 - "$SIMDI" "veri/havuz_$BUGUN_ISO.json" "veri/havuz_$YARIN_ISO.json" <<'EOF'
