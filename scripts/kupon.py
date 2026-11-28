@@ -11,6 +11,7 @@ import numpy as np, pandas as pd
 DB, FIX, GUN, OUT = sys.argv[1:5]
 SIMDI = dt.datetime.strptime(sys.argv[5], "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("Europe/Istanbul")) if len(sys.argv) > 5 else None
 IDD = json.load(open(sys.argv[6], encoding="utf-8")) if len(sys.argv) > 6 else None
+HAVUZ = sys.argv[7] if len(sys.argv) > 7 else None   # kupon oluşturma için seçenek havuzu
 BANKO_MIN, BANKO_MAX = 2.0, 3.5
 SURPRIZ_MIN, SURPRIZ_MAX = 200.0, 3000.0
 MIN_N = 20          # birebir aynı oranlı en az bu kadar geçmiş maç yoksa o maç kupona alınmaz
@@ -151,8 +152,8 @@ def bolumler(txt):
 bl = bolumler(open(FIX, encoding="utf-8").read())
 fm = bl["/fixtures.csv"]; fm = fm[fm.Date == GUN]
 fxx = bl["/new_league_fixtures.csv"]; fxx = fxx[fxx.Date == GUN]
-fx = [dict(lig=r["Div"], saat=r["Time"], ev=r["HomeTeam"], dep=r["AwayTeam"], row=r) for _, r in fm.iterrows()]
-fx += [dict(lig=ULKE.get(r["Country"], r["Country"]), saat=r["Time"], ev=r["Home"], dep=r["Away"], row=r) for _, r in fxx.iterrows()]
+fx = [dict(lig=r["Div"], saat=r["Time"], ev=r["HomeTeam"], dep=r["AwayTeam"], row=r, ht=True) for _, r in fm.iterrows()]
+fx += [dict(lig=ULKE.get(r["Country"], r["Country"]), saat=r["Time"], ev=r["Home"], dep=r["Away"], row=r, ht=False) for _, r in fxx.iterrows()]
 
 
 def fnum(v):
@@ -188,12 +189,14 @@ for f in fx:
     if IDD is None or not idd: continue
     skorlar = pd.Series([f"{int(a)}-{int(b)}" for a, b in zip(g1[msk], g2[msk])]).value_counts().head(3)
     mac = dict(mbc=idd.get("mbc", 1), idd_ad=f"{idd['idd_ev']} – {idd['idd_dep']}", mac=f"{f['ev']} – {f['dep']}",
-               lig=LIG.get(f["lig"], f["lig"]), saat=bas.strftime("%d.%m %H:%M"), oran=o, n=n,
+               lig=LIG.get(f["lig"], f["lig"]), saat=bas.strftime("%d.%m %H:%M"), oran=o, n=n, t=int(bas.timestamp()),
+               fd_ev=f["ev"], fd_dep=f["dep"],
                skorlar=", ".join(f"{s} ({c} kez)" for s, c in skorlar.items()))
     for key, sov, ad_n, oran, mbc in idd.get("secenekler", []):
         k = katalog_onbellek(key, sov, ad_n)
         if not k: continue
         ad, dizi, ht_gerek = k
+        if ht_gerek and not f["ht"]: continue   # bu ligde ilk yarı skoru tutulmuyor, sonucu kontrol edilemez
         mm = msk & hasHT if ht_gerek else msk
         nn = int(mm.sum())
         if nn < MIN_N: continue
@@ -203,10 +206,25 @@ for f in fx:
         base = float(dizi[ym].mean())
         tahmin = (hits + SHRINK * base) / (nn + SHRINK)
         adaylar.append(dict(mac=mac, ad=ad, tur=key, n=nn, hits=hits, p=p, wl=wilson_alt(hits, nn), base=base, yak_n=int(ym.sum()),
-                            tol=t, tahmin=tahmin, oran=float(oran), deger=tahmin * float(oran), mbc=max(mac["mbc"], mbc or 1)))
+                            tol=t, tahmin=tahmin, oran=float(oran), deger=tahmin * float(oran), mbc=max(mac["mbc"], mbc or 1),
+                            sov=sov, sec=ad_n))
 if IDD is None:
     json.dump(uygun, open(OUT, "w", encoding="utf-8"), ensure_ascii=False)
     print(f"uygun maç: {len(uygun)} -> {OUT}"); sys.exit(0)
+
+
+if HAVUZ:
+    ML, MI, SEC = [], {}, []
+    for c in adaylar:
+        if c["hits"] < 3 or not 1.05 <= c["oran"] <= 40: continue
+        mc = c["mac"]
+        if mc["mac"] not in MI:
+            MI[mc["mac"]] = len(ML)
+            ML.append(dict(ad=mc["idd_ad"], lig=mc["lig"], saat=mc["saat"], t=mc["t"], n=mc["n"], oran=[round(v, 2) for v in mc["oran"]],
+                           skorlar=mc["skorlar"]))
+        SEC.append([MI[mc["mac"]], c["ad"], round(c["oran"], 2), int(c["mbc"]), c["hits"], c["n"], round(c["base"], 3), round(c["tahmin"], 3), c["tur"]])
+    json.dump(dict(tarih=GUN, maclar=ML, secenekler=SEC), open(HAVUZ, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    print(f"havuz: {len(ML)} maç, {len(SEC)} seçenek -> {HAVUZ}")
 
 
 def aciklama(c):
@@ -243,7 +261,8 @@ def kur(havuz, anahtar, kullanildi, hedef=None, tavan=None, adet=None, en_cok=8,
 def satir(c):
     return dict(mac=c["mac"]["mac"], idd_ad=c["mac"]["idd_ad"], mbs=c["mbc"], lig=c["mac"]["lig"], saat=c["mac"]["saat"], secim=c["ad"],
                 oran=round(c["oran"], 2), gecmis=round(c["p"], 3), ortalama=round(c["base"], 3), yakin_n=c["yak_n"],
-                olasilik=round(c["tahmin"], 3), n=c["n"], hits=c["hits"], aciklama=aciklama(c))
+                olasilik=round(c["tahmin"], 3), n=c["n"], hits=c["hits"], aciklama=aciklama(c),
+                key=c["tur"], sov=c["sov"], sec=c["sec"], fd_ev=c["mac"]["fd_ev"], fd_dep=c["mac"]["fd_dep"], gun=GUN, t=c["mac"]["t"])
 
 
 # banko: hem birebir hem geniş grupta yüksek tutan, düşük oranlı seçimler; toplam oran 2.00-3.50
