@@ -103,7 +103,33 @@ def main():
         fx.append("### " + yol + "\n" + t)
     with open("veri/fikstur.txt", "w", encoding="utf-8") as f:
         f.write("\n".join(fx))
+    yaklasan_yaz(fx)
     print(f"maç sayısı: {len(df)} | büyük lig: {(df.src == 'M').sum()} | son tarih: {df.date.max()}")
+
+
+def yaklasan_yaz(fx):
+    """Yaklaşan maçların maç öncesi uluslararası 1-X-2 oranlarını site/yaklasan.json'a yazar.
+    Satır: [başlama (UTC epoch saniye), ev, deplasman, 1, X, 2]"""
+    from zoneinfo import ZoneInfo
+    out, simdi = [], dt.datetime.now(dt.timezone.utc).timestamp()
+    for blok in fx:
+        d = oku(blok.split("\n", 1)[1])
+        if d.empty:
+            continue
+        ev, dep = ("HomeTeam", "AwayTeam") if "HomeTeam" in d else ("Home", "Away")
+        for _, r in d.iterrows():
+            try:
+                o = [round(float(r[c]), 2) for c in ("B365H", "B365D", "B365A")]
+                t = dt.datetime.strptime(f"{str(r['Date']).strip()} {str(r['Time']).strip()}", "%d/%m/%Y %H:%M")
+            except (KeyError, TypeError, ValueError):
+                continue
+            t = t.replace(tzinfo=ZoneInfo("Europe/London")).timestamp()
+            if all(v > 1 for v in o) and t > simdi - 3 * 3600:
+                out.append([int(t), str(r[ev]).strip(), str(r[dep]).strip(), *o])
+    out.sort()
+    with open("site/yaklasan.json", "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"yaklaşan maç (uluslararası oranlı): {len(out)}")
 
 
 if __name__ == "__main__":
