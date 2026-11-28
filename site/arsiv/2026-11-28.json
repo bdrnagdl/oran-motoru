@@ -33,8 +33,8 @@
      "fd_dep": "Go Ahead Eagles",
      "gun": "28/11/2026",
      "t": 1795887900,
-     "durum": "bekliyor",
-     "skor": null
+     "durum": "tuttu",
+     "skor": "İY 2-0 · MS 4-0"
     },
     {
      "mac": "Ipswich – Aston Villa",
@@ -58,8 +58,8 @@
      "fd_dep": "Aston Villa",
      "gun": "28/11/2026",
      "t": 1795887000,
-     "durum": "bekliyor",
-     "skor": null
+     "durum": "tuttu",
+     "skor": "İY 1-2 · MS 2-2"
     },
     {
      "mac": "Rangers – Falkirk",
@@ -278,8 +278,8 @@
      "fd_dep": "Ath Madrid",
      "gun": "28/11/2026",
      "t": 1795887000,
-     "durum": "bekliyor",
-     "skor": null
+     "durum": "yatti",
+     "skor": "İY 1-3 · MS 2-3"
     },
     {
      "mac": "Millwall – Burnley",
@@ -407,8 +407,8 @@
      "fd_dep": "Go Ahead Eagles",
      "gun": "28/11/2026",
      "t": 1795887900,
-     "durum": "bekliyor",
-     "skor": null
+     "durum": "tuttu",
+     "skor": "İY 2-0 · MS 4-0"
     },
     {
      "mac": "Rangers – Falkirk",
@@ -489,8 +489,9 @@
     }
    ],
    "not_": "Birebir aynı oranlı maçlarda hem ilk yarıda hem ikinci yarıda 2 ve üzeri gol en sık görülen 3 maç. 2'li ve 3'lü kombinasyonlar (4 kolon); 2 maç tutsa bir kolon kazanır.",
-   "tutan": 0,
-   "durum": "bekliyor"
+   "tutan": 1,
+   "durum": "yatti",
+   "donus": 0
   },
   {
    "ad": "İY/MS kuponu",
