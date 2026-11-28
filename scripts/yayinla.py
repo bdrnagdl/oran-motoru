@@ -2,8 +2,28 @@
 ve bir daha hiç değişmez (sonuçları dışında). Henüz zamanı gelmemiş kuponlar bir sonraki çalışmada yeniden seçilir.
 Kullanım: python3 scripts/yayinla.py <kupon_bugun.json> <site/arsiv>
 """
-import sys, os, json, time, datetime as dt
+import sys, os, json, time, urllib.request, datetime as dt
 from zoneinfo import ZoneInfo
+
+# Telefon bildirimi: ntfy uygulamasında bu konuya abone olan herkese "yeni kupon" bildirimi gider.
+NTFY_KONU = os.environ.get("NTFY_KONU", "oran-motoru-2ff4f1e5")
+SITE = "https://bdrnagdl.github.io/oran-motoru/#kuponlar"
+
+
+def bildir(k):
+    saat = dt.datetime.fromtimestamp(k["ilk_mac"], ZoneInfo("Europe/Istanbul")).strftime("%H:%M")
+    oran = f"toplam oran {k['toplam_oran']:.2f}".replace(".", ",") if k.get("toplam_oran") else f"{k.get('kolon')} kolon"
+    satirlar = [f"{s.get('idd_ad') or s['mac']}: {s['secim']} ({s['oran']:.2f})" for s in k["secimler"]]
+    govde = dict(topic=NTFY_KONU, title=f"Yeni kupon: {k['ad']}", click=SITE, tags=["soccer"],
+                 message=f"İlk maç {saat}, {oran}.\n" + "\n".join(satirlar))
+    try:
+        req = urllib.request.Request("https://ntfy.sh/", data=json.dumps(govde).encode("utf-8"),
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=20).read()
+        print("bildirim gönderildi:", k["ad"])
+    except Exception as e:  # noqa: BLE001  bildirim gitmese de kupon yayınlanır
+        print("bildirim gönderilemedi:", e)
+
 
 kaynak, ARS = sys.argv[1], sys.argv[2]
 if not os.path.exists(kaynak):
@@ -24,6 +44,7 @@ for k in K["kuponlar"]:
     if kalan <= 60 * 60:
         k["yayinlandi"] = dt.datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
         A["kuponlar"].append(k); yeni += 1
+        bildir(k)
         print(f"yayınlandı: {k['ad']} (ilk maça {kalan / 60:.0f} dk)")
     else:
         print(f"bekliyor: {k['ad']} (ilk maça {kalan / 60:.0f} dk)")
