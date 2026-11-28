@@ -173,7 +173,7 @@ def pct(v): return f"%{v*100:.0f}"
 adaylar, incelenen, yetersiz, uygun = [], 0, 0, []
 IDX = {(x["fd_ev"], x["fd_dep"]): x for x in (IDD or [])}
 # Geçmiş maçlar kapanış oranıyla kayıtlı; yaklaşan maçın kapanış oranı henüz yok. Fikstürdeki oran günler önce
-# alınmış olabilir. Bültendeki güncel 1-X-2 oranı belirgin farklıysa (piyasa en az 5 puan oynamışsa) "yakın oranlı
+# alınmış olabilir. Bültendeki güncel 1-X-2 oranı farklıysa (piyasa en az 2 puan oynamışsa) "yakın oranlı
 # maçlar" grubunu onun uluslararası karşılığının çevresinde kurarız: büro payı çıkarılıp uluslararası paya (MARJ) çevrilir.
 # Birebir aynı oranlı grup (yalnızca bilgi amaçlı) fikstür oranıyla kalır.
 MARJ = 1.074
@@ -185,7 +185,7 @@ def guncel_oran(idd, o):
     if not all(k in x for k in ("1", "0", "2")): return o, False
     pi = [1 / x["1"], 1 / x["0"], 1 / x["2"]]; si = sum(pi)
     pf = [1 / v for v in o]; sf = sum(pf)
-    if max(abs(a / si - b / sf) for a, b in zip(pi, pf)) < 0.05: return o, False
+    if max(abs(a / si - b / sf) for a, b in zip(pi, pf)) < 0.02: return o, False
     return tuple(yuvarla(1 / (a / si * MARJ)) for a in pi), True
 for f in fx:
     r = f["row"]; o = tuple(fnum(r.get(c)) for c in ("B365H", "B365D", "B365A"))
@@ -205,7 +205,7 @@ for f in fx:
     if IDD is None or not idd: continue
     skorlar = pd.Series([f"{int(a)}-{int(b)}" for a, b in zip(g1[msk], g2[msk])]).value_counts().head(3)
     mac = dict(idd_id=idd.get("id"), mbc=idd.get("mbc", 1), idd_ad=f"{idd['idd_ev']} – {idd['idd_dep']}", mac=f"{f['ev']} – {f['dep']}",
-               lig=LIG.get(f["lig"], f["lig"]), saat=bas.strftime("%d.%m %H:%M"), oran=o, n=n, t=int(bas.timestamp()), oran_guncel=[round(v, 2) for v in oy] if degisti else None,
+               lig=LIG.get(f["lig"], f["lig"]), saat=bas.strftime("%d.%m %H:%M"), oran=o, n=n, t=int(bas.timestamp()), oran_guncel=[round(v, 2) for v in oy] if degisti else None, oran_ara=oy,
                fd_ev=f["ev"], fd_dep=f["dep"],
                skorlar=", ".join(f"{s} ({c} kez)" for s, c in skorlar.items()))
     for key, sov, ad_n, oran, mbc in idd.get("secenekler", []):
@@ -280,31 +280,28 @@ def satir(c):
                 key=c["tur"], sov=c["sov"], sec=c["sec"], fd_ev=c["mac"]["fd_ev"], fd_dep=c["mac"]["fd_dep"], gun=GUN, t=c["mac"]["t"], idd_id=c["mac"]["idd_id"])
 
 
-# banko: hem birebir hem geniş grupta yüksek tutan, düşük oranlı seçimler; toplam oran 2.00-3.50
-kul = set()
-bh = [c for c in adaylar if c["base"] >= 0.65 and 1.15 <= c["oran"] <= 1.75]
-banko = kur(bh, lambda c: math.log(c["oran"]) / -math.log(c["tahmin"]), kul, hedef=BANKO_MIN, tavan=BANKO_MAX, en_cok=5)
+# ---- bu oranlarla oynanmış son 5 maç: oranı en yakın olanlardan, en yenisinden başlayarak
+_LO = {k: np.log(np.where(O[k] > 1, O[k], np.nan)) for k in ("1", "X", "2")}
+_TARIH = db.date.astype(str).to_numpy()
+_SIRA = np.argsort(_TARIH)[::-1]                     # en yeni maç önce
 
-# DEĞER: tahmini ihtimal x bülten oranı. 1'in üstü = geçmişe göre oran, sonucun gerçek sıklığından yüksek.
-# sürpriz: oranı 3-25 arası, birebir grupta en az 5 kez görülmüş ve yakın oranlardakinin belirgin üstünde çıkmış,
-# değeri en yüksek seçimler; toplam oran en az 200.
-sh = [c for c in adaylar if 3.0 <= c["oran"] <= 25 and c["hits"] >= 3 and c["deger"] >= 0.95]
-surpriz = kur(sh, lambda c: c["deger"], set(kul), hedef=SURPRIZ_MIN, tavan=SURPRIZ_MAX, en_cok=6, ayni_tur=1)
 
-# sistem: oranı 2.5-15 arası, değeri yüksek 6 seçim (her biri tek başına da yüksek oranlı)
-yh = [c for c in adaylar if 2.5 <= c["oran"] <= 15 and c["hits"] >= 3 and c["deger"] >= 0.95]
-sistem = kur(yh, lambda c: c["deger"], {c["mac"]["mac"] for c in surpriz} | set(kul), adet=6, ayni_tur=2)
-if len(sistem) < 6:
-    sistem = kur(yh, lambda c: c["deger"], set(kul), adet=6, ayni_tur=2)
-
-# iki yarı 1.5 üst: aynı oranlı maçlarda "ilk yarı 1.5 üst ve 2. yarı 1.5 üst" en sık olan 3 maç, sistem 2-3
-yari = kur([c for c in adaylar if c["tur"] == "2_730" and c["sec"] == "Evet" and c["hits"] >= 3],
-           lambda c: c["tahmin"], set(), adet=3, ayni_tur=3)
-
-# İY/MS: ilk yarı ile maç sonunun farklı bittiği sonuçlar (1/X, X/1, 2/X, X/2, 1/2, 2/1), değeri en yüksek 3 maç
-DONUS = {"1/0", "0/1", "2/0", "0/2", "1/2", "2/1"}
-iyms = kur([c for c in adaylar if c["tur"] == "2_90" and c["sec"] in DONUS and c["hits"] >= 3],
-           lambda c: c["deger"], set(), adet=3, ayni_tur=3)
+def son_maclar(c, adet=5):
+    oy = c["mac"]["oran_ara"]
+    d = (np.abs(_LO["1"] - math.log(oy[0])) + np.abs(_LO["X"] - math.log(oy[1])) + np.abs(_LO["2"] - math.log(oy[2])))
+    k = katalog_onbellek(c["tur"], c["sov"], c["sec"])
+    gerek_ht = bool(k and k[2])
+    d = np.where(np.isnan(d) | (gerek_ht & ~hasHT), np.inf, np.round(d, 3))
+    aday = np.argpartition(d, 200)[:200]                                  # en yakın 200 maç
+    aday = sorted(aday, key=lambda i: (d[i], -int(_TARIH[i].replace("-", ""))))[:adet]
+    out = []
+    for i in aday:
+        if not np.isfinite(d[i]): continue
+        out.append(dict(tarih=_TARIH[i], mac=f"{db.home[i]} – {db.away[i]}",
+                        oran=[round(float(O["1"][i]), 2), round(float(O["X"][i]), 2), round(float(O["2"][i]), 2)],
+                        iy=f"{int(h1[i])}-{int(h2[i])}" if hasHT[i] else None, ms=f"{int(g1[i])}-{int(g2[i])}",
+                        tuttu=bool(k[1][i]) if k else None))
+    return sorted(out, key=lambda x: x["tarih"], reverse=True)
 
 
 def kupon_ozet(s):
@@ -312,9 +309,57 @@ def kupon_ozet(s):
                 tutma_olasiligi=round(float(np.prod([c["tahmin"] for c in s])), 5) if s else 0)
 
 
-def sistem_ozet(s):
+def satir2(c):
+    s = satir(c)
+    s.update(son5=son_maclar(c), oran_1x2=[round(v, 2) for v in c["mac"]["oran_ara"]])
+    return s
+
+
+# ---- günün 6 kuponu. Her kupon, ilk maçına yaklaşık 1 saat kala (o anki, kapanışa en yakın oranlarla)
+# yayinla.py tarafından BİR KEZ kaydedilir. Seçim: oranı bu maça en yakın geçmiş maçlarda o bahsin tutma sıklığı
+# (gerçekçi ihtimal) en yüksek olanlar. En az oran şartını sağlayan yeterli maç yoksa ihtimali en yüksek diğerleri eklenir.
+def fl(v):
+    try: return float(v)
+    except (TypeError, ValueError): return None
+
+
+ESIK = (SIMDI.timestamp() + 30 * 60) if SIMDI else 0          # 30 dakikadan az kalan maç kupona girmez
+TANIM = [
+    dict(kod="iki_yari_15", ad="İki yarıda da 1.5 üst · Sistem 2-3", tur="sistem", sistem_min=2, adet=3, min_oran=2.0,
+         uy=lambda c: c["tur"] == "2_730" and c["sec"] == "Evet",
+         not_="Hem ilk yarıda hem ikinci yarıda 2 ve üzeri gol. 3 maçın 2'li ve 3'lü kombinasyonları (4 kolon); 2 maç tutsa bir kolon kazanır. Maç başına oran en az 2,00."),
+    dict(kod="ust25", ad="2.5 üst", tur="normal", adet=3, min_oran=1.30,
+         uy=lambda c: c["tur"] == "2_101" and fl(c["sov"]) == 2.5 and c["sec"] == "Üst",
+         not_="Maçta 3 ve üzeri gol. 3 maçın hepsinin tutması gerekir. Maç başına oran en az 1,30."),
+    dict(kod="kg_kg", ad="İY KG var + 2Y KG var · Sistem 2-3", tur="sistem", sistem_min=2, adet=3, min_oran=0,
+         uy=lambda c: c["tur"] == "2_866" and c["sec"] == "Evet / Evet",
+         not_="İki takım hem ilk yarıda hem ikinci yarıda gol atar. 3 maçın 2'li ve 3'lü kombinasyonları (4 kolon); 2 maç tutsa bir kolon kazanır."),
+    dict(kod="iyms", ad="İY/MS · Sistem 2-3", tur="sistem", sistem_min=2, adet=3, min_oran=2.0,
+         uy=lambda c: c["tur"] == "2_90",
+         not_="İlk yarı / maç sonu. 3 maçın 2'li ve 3'lü kombinasyonları (4 kolon); 2 maç tutsa bir kolon kazanır. Maç başına oran en az 2,00."),
+    dict(kod="ms", ad="Maç sonucu", tur="normal", adet=3, min_oran=3.0,
+         uy=lambda c: c["tur"] == "1_1",
+         not_="Maç sonucu 1, X ya da 2. 3 maçın hepsinin tutması gerekir. Maç başına oran en az 3,00."),
+    dict(kod="ust55", ad="5.5 üst · Sistem 3-4-5", tur="sistem", sistem_min=3, adet=5, min_oran=0,
+         uy=lambda c: c["tur"] == "2_101" and fl(c["sov"]) == 5.5 and c["sec"] == "Üst",
+         not_="Maçta 6 ve üzeri gol: sürpriz kupon. 5 maçın 3'lü, 4'lü ve 5'li kombinasyonları (16 kolon); 3 maç tutsa bir kolon kazanır."),
+]
+
+
+def sec_kupon(t):
+    L = sorted([c for c in adaylar if t["uy"](c) and c["mac"]["t"] >= ESIK], key=lambda c: (c["base"], c["p"]), reverse=True)
+    out, kul = [], set()
+    for kosul in (lambda c: c["oran"] >= t["min_oran"], lambda c: True):   # önce oran şartı, yetmezse en olası diğerleri
+        for c in L:
+            if len(out) == t["adet"]: break
+            if c["mac"]["mac"] in kul or not kosul(c): continue
+            out.append(c); kul.add(c["mac"]["mac"])
+    return out
+
+
+def sistem_ozet2(s, kmin):
     ps = [c["tahmin"] for c in s]; od = [c["oran"] for c in s]; nn = len(s)
-    kombo = [cmb for k in range(2, nn + 1) for cmb in itertools.combinations(range(nn), k)]
+    kombo = [cmb for k in range(kmin, nn + 1) for cmb in itertools.combinations(range(nn), k)]
     dag = [1.0] + [0.0] * nn
     for p in ps: dag = [dag[i] * (1 - p) + (dag[i - 1] * p if i else 0) for i in range(nn + 1)]
     tablo = []
@@ -322,60 +367,24 @@ def sistem_ozet(s):
         kaz = [sum(float(np.prod([od[i] for i in cmb])) for cmb in kombo if set(cmb) <= set(tt))
                for tt in itertools.combinations(range(nn), t)]
         tablo.append(dict(tutan=t, olasilik=round(dag[t], 4), en_az=round(min(kaz), 2), en_cok=round(max(kaz), 2)))
-    return dict(kolon=len(kombo), tablo=tablo)
+    return dict(kolon=len(kombo), tablo=tablo, sistem_min=kmin)
 
 
-# en başarılı 5'li: her maç için yakın oranlı maçlarda en sık tutan bahis (oran en az 1.30), en yüksek 5 maç
-def en_iyi_tek(L, kosul, anahtar):
-    L = [c for c in L if kosul(c)]
-    return max(L, key=anahtar) if L else None
-MACLAR = {}
-for c in adaylar: MACLAR.setdefault(c["mac"]["mac"], []).append(c)
-enb = [en_iyi_tek(L, lambda c: c["oran"] >= 1.30, lambda c: (c["base"], c["p"])) for L in MACLAR.values()]
-enb = sorted([c for c in enb if c], key=lambda c: (c["base"], c["p"]), reverse=True)[:5]
+kuponlar = []
+for t in TANIM:
+    S = sec_kupon(t)
+    k = dict(kod=t["kod"], ad=t["ad"], tur=t["tur"], not_=t["not_"], secimler=[satir2(c) for c in S],
+             ilk_mac=min((c["mac"]["t"] for c in S), default=None))
+    k.update(sistem_ozet2(S, t["sistem_min"]) if t["tur"] == "sistem" else kupon_ozet(S))
+    if len(S) < t["adet"]:
+        k["eksik"] = f"Bugün bu bahiste {len(S)} uygun maç vardı."
+    kuponlar.append(k)
 
-# en yakın 4 maç: banko (oran en az 1.20, en sık tutan) ve sürpriz (oran en az 3.00, değeri en yüksek)
-yakin = sorted(MACLAR.values(), key=lambda L: L[0]["mac"]["t"])[:4]
-y4b, y4s = [], []
-for L in yakin:
-    b = en_iyi_tek(L, lambda c: c["oran"] >= 1.20, lambda c: (c["base"], c["p"]))
-    s = (en_iyi_tek(L, lambda c: c["oran"] >= 3 and c["deger"] >= 0.95 and (not b or c["ad"] != b["ad"]), lambda c: c["tahmin"] * c["oran"])
-         or en_iyi_tek(L, lambda c: c["oran"] >= 3 and (not b or c["ad"] != b["ad"]), lambda c: c["tahmin"] * c["oran"]))
-    if b: y4b.append(b)
-    if s: y4s.append(s)
-
-uyari = []
-if not banko or float(np.prod([c["oran"] for c in banko])) < BANKO_MIN: uyari.append("Banko kupon 2,00 toplam orana ulaşamadı.")
-if not surpriz or float(np.prod([c["oran"] for c in surpriz])) < SURPRIZ_MIN: uyari.append("Sürpriz kupon 200 toplam orana ulaşamadı.")
-if len(sistem) < 6: uyari.append("Sistem kuponu için 6 uygun seçim bulunamadı.")
-if len(yari) < 3: uyari.append("İki yarı 1.5 üst kuponu için 3 uygun maç bulunamadı.")
-if len(iyms) < 3: uyari.append("İY/MS kuponu için 3 uygun maç bulunamadı.")
-uyari = " ".join(uyari) or None
-
-sonuc_json = dict(
-    tarih=GUN, hazirlandi=dt.datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M"),
-    mac_sayisi=incelenen, uygun_mac=incelenen - yetersiz, eslesen=len(IDD), min_n=MIN_N, uyari=uyari,
-    kuponlar=[
-        dict(ad="Banko kupon", tur="banko", secimler=[satir(c) for c in banko], **kupon_ozet(banko),
-             not_="Oranı buna yakın geçmiş maçlarda en sık tutan, düşük oranlı seçimler; toplam oran 2,00 ve üzeri. Hepsinin birden tutması gerekir."),
-        dict(ad="Sürpriz kupon", tur="sürpriz", secimler=[satir(c) for c in surpriz], **kupon_ozet(surpriz),
-             not_="Gerçekçi ihtimaline göre oranı en cömert görünen yüksek oranlı seçimler; toplam oran 200 ve üzeri. Tutma ihtimali çok düşük, eğlencelik."),
-        dict(ad="Sistem 2-3-4-5-6", tur="sistem", secimler=[satir(c) for c in sistem], **sistem_ozet(sistem),
-             not_="Gerçekçi ihtimaline göre oranı cömert görünen, her biri yüksek oranlı 6 seçimden 2'li, 3'lü, 4'lü, 5'li ve 6'lı bütün kombinasyonlar. 2 seçim tutsa bile bir kolon kazanır."),
-        dict(ad="İki yarı 1.5 üst · Sistem 2-3", tur="sistem", secimler=[satir(c) for c in yari], **sistem_ozet(yari),
-             not_="Oranı buna yakın geçmiş maçlarda hem ilk yarıda hem ikinci yarıda 2 ve üzeri golün en sık görüldüğü 3 maç. 2'li ve 3'lü kombinasyonlar (4 kolon); 2 maç tutsa bir kolon kazanır."),
-        dict(ad="İY/MS kuponu", tur="iyms", secimler=[satir(c) for c in iyms], **kupon_ozet(iyms),
-             not_="İlk yarı ile maç sonunun farklı bittiği (1/X, X/1, 2/X gibi) sonuçlardan oranı en cömert görünen 3 tanesi. Tutma ihtimali çok düşük. 3 maçın hepsinin tutması gerekir."),
-        dict(ad="En başarılı 5'li", tur="banko", secimler=[satir(c) for c in enb], **kupon_ozet(enb),
-             not_="Her maçın, oranı buna yakın geçmiş maçlarda en sık tutan bahsi (oran en az 1,30); en sık tutan 5 maç. Hepsinin birden tutması gerekir."),
-        dict(ad="En yakın 4 maç: banko", tur="banko", secimler=[satir(c) for c in y4b], **kupon_ozet(y4b),
-             not_="Günün ilk başlayan 4 maçında, yakın oranlı geçmiş maçlarda en sık tutan bahis (oran en az 1,20)."),
-        dict(ad="En yakın 4 maç: sürpriz", tur="sürpriz", secimler=[satir(c) for c in y4s], **kupon_ozet(y4s),
-             not_="Günün ilk başlayan 4 maçında, gerçekçi ihtimaline göre oranı en cömert görünen yüksek oranlı bahis (oran en az 3,00)."),
-    ])
+sonuc_json = dict(tarih=GUN, hazirlandi=dt.datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M"),
+                  mac_sayisi=incelenen, uygun_mac=incelenen - yetersiz, eslesen=len(IDD), min_n=MIN_N, kuponlar=kuponlar)
 json.dump(sonuc_json, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-print(json.dumps(dict(incelenen=incelenen, uygun=incelenen - yetersiz, aday=len(adaylar), uyari=uyari), ensure_ascii=False))
-for k in sonuc_json["kuponlar"]:
-    print("\n==", k["ad"], {a: k[a] for a in ("toplam_oran", "tutma_olasiligi", "kolon") if a in k})
+print(json.dumps(dict(incelenen=incelenen, uygun=incelenen - yetersiz, aday=len(adaylar)), ensure_ascii=False))
+for k in kuponlar:
+    print("\n==", k["ad"], {a: k[a] for a in ("toplam_oran", "tutma_olasiligi", "kolon") if a in k}, k.get("eksik", ""))
     for s in k["secimler"]:
-        print(f"  {s['saat']} {s['mac']} [{s['lig']}] -> {s['secim']} oran={s['oran']} gecmis={s['hits']}/{s['n']}={s['gecmis']} yakın={s['ortalama']} tahmin={s['olasilik']}")
+        print(f"  {s['saat']} {s['mac']} -> {s['secim']} oran={s['oran']} gerçekçi={s['ortalama']} son5={[x['tuttu'] for x in s['son5']]}")
