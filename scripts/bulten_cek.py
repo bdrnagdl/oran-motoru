@@ -75,7 +75,7 @@ def main(giris, cikis):
         d = (al(B + f"event/{best['i']}") or {}).get("data")
         if not d: yok.append(f"{u['ev']} - {u['dep']}"); continue
         o = oranlar(d)
-        out.append(dict(fd_ev=u["ev"], fd_dep=u["dep"], idd_ev=best["hn"], idd_dep=best["an"], mbc=best.get("mbc", 1),
+        out.append(dict(id=best["i"], fd_ev=u["ev"], fd_dep=u["dep"], idd_ev=best["hn"], idd_dep=best["an"], mbc=best.get("mbc", 1),
                         secenekler=o, benzerlik=round(bs, 2)))
         print(f"  {u['ev']} - {u['dep']}  =>  {best['hn']} - {best['an']} ({bs:.2f}), {len(o)} oran", flush=True)
         time.sleep(0.4)
