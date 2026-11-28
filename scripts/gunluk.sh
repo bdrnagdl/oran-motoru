@@ -17,8 +17,13 @@ for ISO in "$BUGUN_ISO" "$YARIN_ISO"; do
     "veri/bulten_$ISO.json" "veri/havuz_$ISO.json"
 done
 
-# Bugünün kuponu daha önce (dün akşam) hazırlandıysa olduğu gibi kalır; yarınınki her çalışmada yenilenir.
-python3 scripts/arsiv.py veri/kapanis_maclar.csv site/arsiv "veri/kupon_$BUGUN_ISO.json" 0 "veri/kupon_$YARIN_ISO.json" 1
+# Günün kuponları o gün sabah 10:37'deki çalışmada BİR KEZ kaydedilir (maç saatine en yakın oranlarla) ve
+# bir daha hiç değişmez. Saatlik çalışmalar yalnızca listeleri, "kupon oluştur" havuzunu ve sonuçları günceller.
+if [ "$(date +%H)" -ge 10 ]; then
+  python3 scripts/arsiv.py veri/kapanis_maclar.csv site/arsiv "veri/kupon_$BUGUN_ISO.json" 0
+else
+  python3 scripts/arsiv.py veri/kapanis_maclar.csv site/arsiv
+fi
 
 # Kupon oluşturma havuzu (bugün + yarın)
 python3 - "$SIMDI" "veri/havuz_$BUGUN_ISO.json" "veri/havuz_$YARIN_ISO.json" <<'EOF'
