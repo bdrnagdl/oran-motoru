@@ -111,9 +111,9 @@ footer{color:var(--mut);font-size:14px;border-top:1px solid var(--line)}
   <h1>Oran Arama Motoru</h1>
   <p class="sub">Maçın 1-X-2 kapanış oranlarını gir, geçmişte aynı oranla oynanmış maçların nasıl bittiğini gör. <a class="jump" href="#kuponlar">Günün kuponlarına git</a></p>
   <form id="f" class="inputs" autocomplete="off">
-   <div class="odd"><label for="o1">1 (Ev)</label><input id="o1" inputmode="decimal" value="2.10"></div>
-   <div class="odd"><label for="ox">X (Beraberlik)</label><input id="ox" inputmode="decimal" value="3.40"></div>
-   <div class="odd"><label for="o2">2 (Deplasman)</label><input id="o2" inputmode="decimal" value="3.50"></div>
+   <div class="odd"><label for="o1">1 (Ev)</label><input id="o1" inputmode="decimal" placeholder="örn. 2,10"></div>
+   <div class="odd"><label for="ox">X (Beraberlik)</label><input id="ox" inputmode="decimal" placeholder="örn. 3,40"></div>
+   <div class="odd"><label for="o2">2 (Deplasman)</label><input id="o2" inputmode="decimal" placeholder="örn. 3,50"></div>
    <div class="tol"><label for="tol">Yakınlık: her oran ± <output id="tolv">0.05</output></label><input id="tol" type="range" min="0" max="0.30" step="0.01" value="0.05"></div>
   </form>
   <div class="filters">
@@ -125,7 +125,9 @@ footer{color:var(--mut);font-size:14px;border-top:1px solid var(--line)}
 </header>
 
 
-<main>
+<section class="band" id="ipucu"><div class="wrap"><div class="empty">Yukarıdaki kutulara bir maçın 1, X ve 2 oranlarını yaz. Geçmişte aynı oranlarla oynanmış maçlar ve sonuçları burada görünecek.</div></div></section>
+
+<main id="sonuc" hidden>
  <section class="band"><div class="wrap">
   <div class="head"><span class="big" id="cnt">…</span><span class="note" id="cntt">Veri yükleniyor…</span></div>
   <div class="grid2">
@@ -172,17 +174,18 @@ let D=[],shown=50,hits=[];
 const ls=$("lig");
 ls.innerHTML='<option value="">Tüm ligler</option><option value="@main">Sadece İY/MS olan 22 lig</option><optgroup label="İY/MS olan ligler">'+MAIN.map(k=>`<option value="${k}">${esc(LIG[k])}</option>`).join("")+'</optgroup><optgroup label="Sadece maç sonucu olan ligler">'+Object.keys(LIG).filter(k=>!MAIN.includes(k)).map(k=>`<option value="${k}">${esc(LIG[k])}</option>`).join("")+'</optgroup>';
 
-const ids=["o1","ox","o2","tol","lig","yil","htonly"];
-try{const s=JSON.parse(localStorage.getItem("oranMotoru")||"{}");for(const k of ids){if(s[k]===undefined)continue;const el=$(k);if(el.type==="checkbox")el.checked=s[k];else el.value=s[k]}}catch(e){}
-const save=()=>{try{const s={};for(const k of ids){const el=$(k);s[k]=el.type==="checkbox"?el.checked:el.value}localStorage.setItem("oranMotoru",JSON.stringify(s))}catch(e){}};
+const ids=["o1","ox","o2","tol","lig","yil","htonly"],kayit=["tol","lig","yil","htonly"];
+try{const s=JSON.parse(localStorage.getItem("oranMotoru")||"{}");for(const k of kayit){if(s[k]===undefined)continue;const el=$(k);if(el.type==="checkbox")el.checked=s[k];else el.value=s[k]}}catch(e){}
+const save=()=>{try{const s={};for(const k of kayit){const el=$(k);s[k]=el.type==="checkbox"?el.checked:el.value}localStorage.setItem("oranMotoru",JSON.stringify(s))}catch(e){}};
 const num=id=>{const v=parseFloat(String($(id).value).replace(",","."));return isFinite(v)&&v>1?v:null};
 
 function run(){
  $("tolv").textContent=(+$("tol").value).toFixed(2);
  const a=num("o1"),x=num("ox"),b=num("o2"),t=+$("tol").value+1e-9,lg=$("lig").value,yr=+$("yil").value,ho=$("htonly").checked;
  renderFair(a,x,b);
- if(!D.length)return;
- if(a===null||x===null||b===null){$("cnt").textContent="–";$("cntt").textContent="Üç oranı da 1'den büyük bir sayı olarak gir (örnek: 2,10).";hits=[];draw();return}
+ const bos=a===null||x===null||b===null;
+ $("sonuc").hidden=bos;$("ipucu").hidden=!bos;
+ if(bos||!D.length)return;
  hits=[];
  for(const r of D){
   if(Math.abs(r[8]-a)>t||Math.abs(r[9]-x)>t||Math.abs(r[10]-b)>t)continue;
@@ -249,7 +252,7 @@ let tm;const later=()=>{clearTimeout(tm);tm=setTimeout(run,120)};
 for(const k of ids){$(k).addEventListener("input",later);$(k).addEventListener("change",later)}
 $("f").addEventListener("submit",e=>{e.preventDefault();run()});
 renderFair(num("o1"),num("ox"),num("o2"));
-fetch("maclar.json").then(r=>{if(!r.ok)throw new Error(r.status);return r.json()}).then(j=>{D=j;$("cntt").textContent="";run()}).catch(e=>{$("cnt").textContent="Hata";$("cntt").textContent="Maç verisi yüklenemedi. Sayfayı yenilemeyi dene."});
+fetch("maclar.json").then(r=>{if(!r.ok)throw new Error(r.status);return r.json()}).then(j=>{D=j;run()}).catch(e=>{$("sonuc").hidden=false;$("cnt").textContent="Hata";$("cntt").textContent="Maç verisi yüklenemedi. Sayfayı yenilemeyi dene."});
 }
 </script>
 </body>
