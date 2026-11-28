@@ -109,20 +109,24 @@ function havuz(gs,min){
 // ---- en başarılı bahisler: her maç için yakın oranlı maçlarda en sık tutan bahis
 function enIyi(){
  if(!HV)return;
+ const ayni=$("eisira").value==="ayni";
+ const deger=c=>ayni?c.p:c.base,ikinci=c=>ayni?c.base:c.p;
  const A=havuz($("eigun").value,num($("eimin").value)||1),best={};
- for(const c of A){const b=best[c.mid];if(!b||c.base>b.base||(c.base===b.base&&c.p>b.p))best[c.mid]=c}
- const R=Object.values(best).sort((a,b)=>b.base-a.base||b.p-a.p);
+ for(const c of A){const b=best[c.mid];if(!b||deger(c)>deger(b)||(deger(c)===deger(b)&&(ikinci(c)>ikinci(b)||(ikinci(c)===ikinci(b)&&c.n>b.n))))best[c.mid]=c}
+ const R=Object.values(best).sort((a,b)=>deger(b)-deger(a)||ikinci(b)-ikinci(a)||b.n-a.n);
  if(!R.length){$("eilist").innerHTML='<div class="empty">Bu ayarlarla maç yok. En az oranı düşür ya da günü değiştir.</div>';return}
- $("eilist").innerHTML=`<p class="note" style="margin:0 0 8px">${R.length} maç, en sık tutandan aşağı doğru.</p><div class="scroll"><table class="tablo eit"><thead><tr><th>Saat</th><th>Maç</th><th>En sık tutan bahis</th><th class="n">Tutma ihtimali</th><th class="n gizle">Aynı oranlı maçlarda</th><th class="n">Oran</th></tr></thead><tbody>${R.map(c=>`<tr>
+ const b1=ayni?"Aynı oranlı geçmiş maçlarda":"Yakın oranlı geçmiş maçlarda",b2=ayni?"Yakın oranlarda":"Aynı oranlı maçlarda";
+ $("eilist").innerHTML=`<p class="note" style="margin:0 0 8px">${R.length} maç; ${ayni?"aynı oranlı geçmiş maçlarda":"yakın oranlı geçmiş maçlarda"} en sık tutandan aşağı doğru.</p><div class="scroll"><table class="tablo eit"><thead><tr><th>Saat</th><th>Maç</th><th>En sık tutan bahis</th><th class="n">${b1}</th><th class="n gizle">${b2}</th><th class="n">Oran</th></tr></thead><tbody>${R.map(c=>`<tr>
  <td class="saat">${esc(c.m.saat)}</td>
  <td><b>${esc(c.m.ad)}</b><small>${esc(c.m.lig)}</small></td>
  <td><span class="tag">${esc(c.ad)}</span></td>
- <td class="n"><div class="cub"><span style="width:${(c.base*100).toFixed(0)}%"></span></div><b class="yuzde">${yuz(c.base)}</b></td>
- <td class="n gizle">${yuz(c.p)} <small class="ic">${c.hits}/${c.n}</small></td>
+ <td class="n"><div class="cub"><span style="width:${(deger(c)*100).toFixed(0)}%"></span></div><b class="yuzde">${yuz(deger(c))}</b>${ayni?`<small>${c.hits}/${c.n} maç</small>`:""}</td>
+ <td class="n gizle">${yuz(ikinci(c))}${ayni?"":` <small class="ic">${c.hits}/${c.n}</small>`}</td>
  <td class="n"><b class="oranb">${o2(c.oran)}</b>${c.mbc>1?`<small>MBS ${c.mbc}</small>`:""}</td></tr>`).join("")}</tbody></table></div>`+
   `<h3 class="gunbaslik">En sık tutan ${Math.min(5,R.length)} bahisle kupon</h3><div class="tekkart">${havuzKart(`${Math.min(5,R.length)} maçlık kupon`,"Yukarıdaki listenin ilk bahisleri. Hepsinin birden tutması gerekir.",R.slice(0,5),"","")}</div>`;
 }
-for(const k of ["eigun","eimin"])$(k).addEventListener("input",enIyi);
+(()=>{const d=document.createElement("div");d.className="fl";d.innerHTML='<label class="lb" for="eisira">Sırala</label><select id="eisira"><option value="ayni">Aynı oranlı maçlardaki başarıya göre</option><option value="yakin">Yakın oranlı maçlardaki başarıya göre</option></select>';$("eimin").closest(".fl").after(d)})();
+for(const k of ["eigun","eimin","eisira"])$(k).addEventListener("input",enIyi);
 
 // ---- kupon oluştur
 const VARS={guvenli:{adet:3,min:"1,20"},surpriz:{adet:5,min:"3,00"}};
