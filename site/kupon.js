@@ -54,11 +54,19 @@ const secim=(s,ek,ca)=>`<div class="sec${s.durum==="tuttu"?" ok":s.durum==="yatt
  <span class="pk">${esc(s.secim)}</span>${rozet(s.durum)}${s.skor?`<div class="i">${esc(s.skor)}</div>`:""}${ek||""}
 </div>`;
 
+// ---- seçimdeki maçın oranlarıyla oynanmış son 5 maç (maç adına dokununca açılır)
+const tarihTR=t=>t?t.slice(8,10)+"."+t.slice(5,7)+"."+t.slice(0,4):"";
+const son5=s=>s.son5&&s.son5.length?`<details class="son5"><summary>Bu oranlarla oynanmış son ${s.son5.length} maç</summary><p class="knote" style="margin:6px 0">Bu maçın kupon anındaki uluslararası oranı ${(s.oran_1x2||[]).map(o2).join(" – ")}. Oranı buna en yakın geçmiş maçlar, en yenisinden:</p><div class="scroll"><table class="st"><thead><tr><th>Tarih</th><th class="n">Bahis</th><th class="n">MS</th><th class="n">İY</th><th>Maç</th><th class="n">1 – X – 2</th></tr></thead><tbody>${[...s.son5].sort((a,b)=>b.tarih.localeCompare(a.tarih)).map(x=>`<tr><td>${tarihTR(x.tarih)}</td><td class="n">${x.tuttu==null?"–":x.tuttu?'<span class="dz d-ok">Tuttu</span>':'<span class="dz d-no">Yattı</span>'}</td><td class="n"><b>${esc(x.ms)}</b></td><td class="n">${x.iy??"–"}</td><td>${esc(x.mac)}</td><td class="n">${x.oran.map(o2).join(" – ")}</td></tr>`).join("")}</tbody></table></div></details>`:"";
+document.addEventListener("click",e=>{const m=e.target.closest(".sec .m");if(!m)return;const d=m.closest(".sec").querySelector("details.son5");if(d)d.open=!d.open});
+(()=>{const st=document.createElement("style");st.textContent=".sec:has(details.son5) .m{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}.son5 summary{cursor:pointer;font-weight:600;color:var(--saha);margin-top:6px}.son5 table{font-size:13px}.son5 td,.son5 th{white-space:nowrap;padding:4px 6px}.kart.bekle{opacity:.75}.kart.bekle header p{margin-top:6px}";document.head.appendChild(st)})();
+const KUPONLAR=[["iki_yari_15","İki yarıda da 1.5 üst · Sistem 2-3"],["ust25","2.5 üst"],["kg_kg","İY KG var + 2Y KG var · Sistem 2-3"],["iyms","İY/MS · Sistem 2-3"],["ms","Maç sonucu"],["ust55","5.5 üst · Sistem 3-4-5"]];
+const bekleKart=ad=>`<article class="kart bekle"><header><h3>${esc(ad)}</h3><p>Henüz yayınlanmadı. İlk maçına yaklaşık 1 saat kala, o anki oranlarla yayınlanacak ve sonra değişmeyecek.</p></header></article>`;
+
 // ---- sitenin kupon kartı (günün kuponları ve geçmiş)
 function kart(k,tam){
  const S=k.secimler.map(s=>({...s,mac:s.idd_ad||s.mac}));
  const simdi=Date.now()/1000;
- const sec=S.map(s=>secim(s,tam&&s.n?`<div class="i"><span class="gi">Gerçekçi ihtimal ${yuz(s.ortalama)}</span> · bülten oranı ${yuz(1/s.oran)} diyor</div><details><summary>Neden bu seçim?</summary><p>${esc(s.aciklama)}</p><p>Birebir aynı oranlı ${s.n} maçın ${s.hits} tanesinde oldu (${yuz(s.gecmis)}); az sayıda maçtan çıktığı için şans payı yüksek, ihtimal olarak kullanılmıyor.</p></details>`:"",
+ const sec=S.map(s=>secim(s,tam&&s.n?`<div class="i"><span class="gi">Gerçekçi ihtimal ${yuz(s.ortalama)}</span> · bülten oranı ${yuz(1/s.oran)} diyor</div>${son5(s)}<details><summary>Neden bu seçim?</summary><p>${esc(s.aciklama)}</p><p>Birebir aynı oranlı ${s.n} maçın ${s.hits} tanesinde oldu (${yuz(s.gecmis)}); az sayıda maçtan çıktığı için şans payı yüksek, ihtimal olarak kullanılmıyor.</p></details>`:"",
   tam&&s.durum!=="tuttu"&&s.durum!=="yatti"&&(!s.t||s.t>simdi)?canliAttr(s.idd_id,s.key,s.sov,s.sec,s.oran):"")).join("");
  const ih=S.length&&S.every(s=>s.ortalama)?S.reduce((a,s)=>a*s.ortalama,1):(k.tutma_olasiligi||0);
  let alt="";
@@ -71,19 +79,21 @@ function kart(k,tam){
   alt=`<div class="tot"><div><b>${k.toplam_oran?say(k.toplam_oran):"–"}</b><span>toplam oran</span></div>${tam?`<div><b>${yuz(ih)}</b><span>gerçekçi tutma ihtimali</span></div>`:""}</div>${tam&&k.durum!=="tuttu"&&k.durum!=="yatti"?ihUyari(ih):""}`;
  }
  const kopya=S.length?`<div class="kalt">${kopyaDugme(k.ad,S.map(s=>`${s.mac}: ${s.secim} (${o2(s.oran)})`))}</div>`:"";
- return `<article class="kart${RENK[k.tur]??" s"}"><header><h3>${esc(k.ad)}</h3>${rozet(k.durum)}${tam?`<p>${esc(k.not_)}</p>`:""}</header>${sec||'<p class="knote" style="padding-top:12px">Bu gün için bu kupona uygun maç bulunamadı.</p>'}${alt}${kopya}</article>`;
+ return `<article class="kart${RENK[k.tur]??" s"}"><header><h3>${esc(k.ad)}</h3>${rozet(k.durum)}${tam?`<p>${esc(k.not_)}</p>`:""}${k.yayinlandi?`<p><b>Yayınlandı: ${esc(k.yayinlandi)}</b></p>`:""}${tam&&k.eksik?`<p>${esc(k.eksik)}</p>`:""}</header>${sec||'<p class="knote" style="padding-top:12px">Bu gün için bu kupona uygun maç bulunamadı.</p>'}${alt}${kopya}</article>`;
 }
 
 // ---- günün kuponları ve geçmiş
 let IDX=[],FILTRE="tutan";
 function gunGoster(iso){
  $("kgecmis").hidden=true;$("kgrid").hidden=false;$("kmeta").textContent="Yükleniyor…";$("kuyari").hidden=true;$("kgrid").innerHTML="";
+ const ust=`${uzun(iso)}. Site her gün 6 kupon yayınlar. Her kupon, ilk maçına yaklaşık 1 saat kala o anki (kapanışa en yakın) oranlarla yayınlanır ve sonra değişmez. Bir maçın adına dokunursan o oranlarla oynanmış son 5 maç açılır. Saatler Türkiye saatiyle.`;
  fetch(`arsiv/${iso}.json`,{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{
-  $("kmeta").textContent=`${uzun(iso)} maçları. ${j.mac_sayisi} maç incelendi, ${j.uygun_mac??"?"} tanesinde aynı oranlı en az ${j.min_n??20} geçmiş maç vardı. Hazırlanma: ${j.hazirlandi}. Saatler Türkiye saatiyle.`;
-  if(j.uyari){$("kuyari").textContent=j.uyari;$("kuyari").hidden=false}
-  $("kgrid").innerHTML=j.kuponlar.map(k=>kart(k,true)).join("")+`<p class="knote">Oranlar kupon hazırlanırken (${esc(j.hazirlandi)}) bültenden alındı. Başlamamış maçlarda oranın altında "şimdi" yazıyorsa bültendeki oran o arada değişmiştir; "güncel" yazıyorsa aynıdır.</p>`;
+  $("kmeta").textContent=ust;
+  const B={};for(const k of j.kuponlar)if(k.kod)B[k.kod]=k;
+  const eski=j.kuponlar.filter(k=>!k.kod);
+  $("kgrid").innerHTML=KUPONLAR.map(([kod,ad])=>B[kod]?kart(B[kod],true):(iso>=BUGUN?bekleKart(ad):"")).join("")+eski.map(k=>kart(k,true)).join("")+`<p class="knote">Oranlar kuponun yayınlandığı anda bültenden alındı. Başlamamış maçlarda oranın altında "şimdi" yazıyorsa bültendeki oran o arada değişmiştir; "güncel" yazıyorsa aynıdır.</p>`;
   canli($("kgrid"));
- }).catch(()=>{$("kmeta").textContent=iso===BUGUN?"Bugünün kuponları henüz yayınlanmadı. Site kuponları günün ilk maçından yaklaşık 1 saat önce bir kez yayınlar; yayınlanan kupon bir daha değişmez.":"Bu günün kuponları henüz hazır değil."});
+ }).catch(()=>{$("kmeta").textContent=ust;$("kgrid").innerHTML=iso>=BUGUN?KUPONLAR.map(([kod,ad])=>bekleKart(ad)).join(""):'<div class="empty">Bu günün kuponu yok.</div>'});
 }
 function gecmisGoster(){
  $("kgrid").hidden=true;$("kuyari").hidden=true;$("kgecmis").hidden=false;
