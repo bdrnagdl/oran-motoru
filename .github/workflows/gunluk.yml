@@ -2,11 +2,12 @@ name: Günlük kupon ve site güncelleme
 
 on:
   schedule:
-    - cron: "37 18 * * *"   # her gün 21:37 (Türkiye saati)
+    - cron: "37 18 * * *"   # her gün 21:37 (Türkiye saati): yarının kuponları
+    - cron: "37 6 * * *"    # her gün 09:37 (Türkiye saati): sonuçlar ve güncel oranlar
   workflow_dispatch: {}      # elle de çalıştırılabilir
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -17,7 +18,7 @@ concurrency:
 jobs:
   hazirla:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,6 +28,16 @@ jobs:
         run: pip install pandas numpy
       - name: Veriyi güncelle ve kuponları hazırla
         run: bash scripts/gunluk.sh
+      - name: Kupon arşivini kaydet
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/arsiv
+          if git diff --cached --quiet; then echo "arşivde değişiklik yok"; else
+            git commit -m "Kupon arşivi güncellendi"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
