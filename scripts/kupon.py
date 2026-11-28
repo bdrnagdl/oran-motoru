@@ -172,24 +172,40 @@ def pct(v): return f"%{v*100:.0f}"
 
 adaylar, incelenen, yetersiz, uygun = [], 0, 0, []
 IDX = {(x["fd_ev"], x["fd_dep"]): x for x in (IDD or [])}
+# Geçmiş maçlar kapanış oranıyla kayıtlı; yaklaşan maçın kapanış oranı henüz yok. Fikstürdeki oran günler önce
+# alınmış olabilir. Bültendeki güncel 1-X-2 oranı belirgin farklıysa (piyasa en az 5 puan oynamışsa) "yakın oranlı
+# maçlar" grubunu onun uluslararası karşılığının çevresinde kurarız: büro payı çıkarılıp uluslararası paya (MARJ) çevrilir.
+# Birebir aynı oranlı grup (yalnızca bilgi amaçlı) fikstür oranıyla kalır.
+MARJ = 1.074
+_say = pd.Series(np.concatenate([O["1"], O["X"], O["2"]])).value_counts()
+MERDIVEN = np.array(sorted(v for v, c in _say.items() if v > 1 and c >= 30))
+def yuvarla(v): return float(MERDIVEN[np.abs(MERDIVEN - v).argmin()])
+def guncel_oran(idd, o):
+    x = {n: v for key, sov, n, v, mb in (idd or {}).get("secenekler", []) if key == "1_1"}
+    if not all(k in x for k in ("1", "0", "2")): return o, False
+    pi = [1 / x["1"], 1 / x["0"], 1 / x["2"]]; si = sum(pi)
+    pf = [1 / v for v in o]; sf = sum(pf)
+    if max(abs(a / si - b / sf) for a, b in zip(pi, pf)) < 0.05: return o, False
+    return tuple(yuvarla(1 / (a / si * MARJ)) for a in pi), True
 for f in fx:
     r = f["row"]; o = tuple(fnum(r.get(c)) for c in ("B365H", "B365D", "B365A"))
     if None in o: continue
     bas = tr_saat(f["saat"])
     if SIMDI and bas <= SIMDI: continue
     incelenen += 1
+    oy, degisti = guncel_oran(IDX.get((f["ev"], f["dep"])), o)
     msk = (O["1"] == round(o[0], 2)) & (O["X"] == round(o[1], 2)) & (O["2"] == round(o[2], 2))
     n = int(msk.sum())
     if n < MIN_N: yetersiz += 1; continue
     for t in (0.03, 0.05, 0.08, 0.12, 0.20):
-        yak = (np.abs(O["1"] / o[0] - 1) <= t) & (np.abs(O["X"] / o[1] - 1) <= t) & (np.abs(O["2"] / o[2] - 1) <= t)
+        yak = (np.abs(O["1"] / oy[0] - 1) <= t) & (np.abs(O["X"] / oy[1] - 1) <= t) & (np.abs(O["2"] / oy[2] - 1) <= t)
         if yak.sum() >= 150: break
     uygun.append(dict(ev=f["ev"], dep=f["dep"], utc=bas.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M")))
     idd = IDX.get((f["ev"], f["dep"]))
     if IDD is None or not idd: continue
     skorlar = pd.Series([f"{int(a)}-{int(b)}" for a, b in zip(g1[msk], g2[msk])]).value_counts().head(3)
     mac = dict(idd_id=idd.get("id"), mbc=idd.get("mbc", 1), idd_ad=f"{idd['idd_ev']} – {idd['idd_dep']}", mac=f"{f['ev']} – {f['dep']}",
-               lig=LIG.get(f["lig"], f["lig"]), saat=bas.strftime("%d.%m %H:%M"), oran=o, n=n, t=int(bas.timestamp()),
+               lig=LIG.get(f["lig"], f["lig"]), saat=bas.strftime("%d.%m %H:%M"), oran=o, n=n, t=int(bas.timestamp()), oran_guncel=[round(v, 2) for v in oy] if degisti else None,
                fd_ev=f["ev"], fd_dep=f["dep"],
                skorlar=", ".join(f"{s} ({c} kez)" for s, c in skorlar.items()))
     for key, sov, ad_n, oran, mbc in idd.get("secenekler", []):
@@ -204,7 +220,7 @@ for f in fx:
         ym = yak & hasHT if ht_gerek else yak
         if ym.sum() < 50: continue
         base = float(dizi[ym].mean())
-        tahmin = (hits + SHRINK * base) / (nn + SHRINK)
+        tahmin = base   # testte gerçek tutma oranı birebir aynı oranlı % değil, yakın oranlı % ile örtüştü
         adaylar.append(dict(mac=mac, ad=ad, tur=key, n=nn, hits=hits, p=p, wl=wilson_alt(hits, nn), base=base, yak_n=int(ym.sum()),
                             tol=t, tahmin=tahmin, oran=float(oran), deger=tahmin * float(oran), mbc=max(mac["mbc"], mbc or 1),
                             sov=sov, sec=ad_n))
@@ -220,9 +236,9 @@ if HAVUZ:
         mc = c["mac"]
         if mc["mac"] not in MI:
             MI[mc["mac"]] = len(ML)
-            ML.append(dict(ad=mc["idd_ad"], lig=mc["lig"], saat=mc["saat"], t=mc["t"], n=mc["n"], oran=[round(v, 2) for v in mc["oran"]],
+            ML.append(dict(ad=mc["idd_ad"], id=mc["idd_id"], lig=mc["lig"], saat=mc["saat"], t=mc["t"], n=mc["n"], oran=[round(v, 2) for v in mc["oran"]],
                            skorlar=mc["skorlar"]))
-        SEC.append([MI[mc["mac"]], c["ad"], round(c["oran"], 2), int(c["mbc"]), c["hits"], c["n"], round(c["base"], 3), round(c["tahmin"], 3), c["tur"]])
+        SEC.append([MI[mc["mac"]], c["ad"], round(c["oran"], 2), int(c["mbc"]), c["hits"], c["n"], round(c["base"], 3), round(c["tahmin"], 3), c["tur"], c["sov"], c["sec"]])
     json.dump(dict(tarih=GUN, maclar=ML, secenekler=SEC), open(HAVUZ, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print(f"havuz: {len(ML)} maç, {len(SEC)} seçenek -> {HAVUZ}")
 
@@ -234,10 +250,9 @@ def aciklama(c):
     t += f"Bunların ilk yarı skoru bilinen {c['n']} tanesinin " if c["n"] != mc["n"] else "Bunların "
     t += (f"{c['hits']} tanesinde ({pct(c['p'])}) \"{c['ad']}\" oldu. Oranı buna yakın (her biri ±%{c['tol']*100:.0f}) {c['yak_n']} maçta "
           f"bu sonuç {pct(c['base'])} çıkmış")
-    kat = c["p"] / c["base"] if c["base"] else 0
-    t += f"; yani birebir bu oranlarda {kat:.1f} kat daha sık görülmüş." if kat >= 1.3 else "."
-    t += (f" Bültendeki oranı {c['oran']:.2f}; bu oran bu sonuca yaklaşık {pct(1 / c['oran'])} ihtimal veriyor, "
-          f"geçmişe göre tahmini ihtimal {pct(c['tahmin'])}.")
+    t += (". Gerçekçi ihtimal olarak yakın oranlı maçlardaki yüzdeyi kullanıyoruz: 2,5 yıllık testte gerçek sonuçlar ona uydu, "
+          "birebir aynı oranlı az sayıda maçtan çıkan yüzde ise çoğunlukla şanstan dolayı fazla görünüyordu.")
+    t += f" Bültendeki oranı {c['oran']:.2f}; bu oran bu sonuca yaklaşık {pct(1 / c['oran'])} ihtimal veriyor."
     t += f" Bu oranlı maçlarda en sık skorlar: {mc['skorlar']}."
     if c["n"] < 40: t += f" Not: örnek sayısı ({c['n']}) az, sonuç şanstan etkilenmiş olabilir."
     return t
@@ -267,17 +282,17 @@ def satir(c):
 
 # banko: hem birebir hem geniş grupta yüksek tutan, düşük oranlı seçimler; toplam oran 2.00-3.50
 kul = set()
-bh = [c for c in adaylar if c["p"] >= 0.72 and c["base"] >= 0.62 and c["tahmin"] >= 0.65 and 1.15 <= c["oran"] <= 1.75]
+bh = [c for c in adaylar if c["base"] >= 0.65 and 1.15 <= c["oran"] <= 1.75]
 banko = kur(bh, lambda c: math.log(c["oran"]) / -math.log(c["tahmin"]), kul, hedef=BANKO_MIN, tavan=BANKO_MAX, en_cok=5)
 
 # DEĞER: tahmini ihtimal x bülten oranı. 1'in üstü = geçmişe göre oran, sonucun gerçek sıklığından yüksek.
 # sürpriz: oranı 3-25 arası, birebir grupta en az 5 kez görülmüş ve yakın oranlardakinin belirgin üstünde çıkmış,
 # değeri en yüksek seçimler; toplam oran en az 200.
-sh = [c for c in adaylar if 3.0 <= c["oran"] <= 25 and c["hits"] >= 5 and c["p"] >= 1.5 * c["base"] and c["deger"] >= 1.2]
+sh = [c for c in adaylar if 3.0 <= c["oran"] <= 25 and c["hits"] >= 3 and c["deger"] >= 0.95]
 surpriz = kur(sh, lambda c: c["deger"], set(kul), hedef=SURPRIZ_MIN, tavan=SURPRIZ_MAX, en_cok=6, ayni_tur=1)
 
 # sistem: oranı 2.5-15 arası, değeri yüksek 6 seçim (her biri tek başına da yüksek oranlı)
-yh = [c for c in adaylar if 2.5 <= c["oran"] <= 15 and c["hits"] >= 6 and c["p"] >= 1.3 * c["base"] and c["deger"] >= 1.15]
+yh = [c for c in adaylar if 2.5 <= c["oran"] <= 15 and c["hits"] >= 3 and c["deger"] >= 0.95]
 sistem = kur(yh, lambda c: c["deger"], {c["mac"]["mac"] for c in surpriz} | set(kul), adet=6, ayni_tur=2)
 if len(sistem) < 6:
     sistem = kur(yh, lambda c: c["deger"], set(kul), adet=6, ayni_tur=2)
@@ -324,7 +339,7 @@ yakin = sorted(MACLAR.values(), key=lambda L: L[0]["mac"]["t"])[:4]
 y4b, y4s = [], []
 for L in yakin:
     b = en_iyi_tek(L, lambda c: c["oran"] >= 1.20, lambda c: (c["base"], c["p"]))
-    s = (en_iyi_tek(L, lambda c: c["oran"] >= 3 and c["hits"] >= 4 and c["tahmin"] > c["base"] and (not b or c["ad"] != b["ad"]), lambda c: c["tahmin"] * c["oran"])
+    s = (en_iyi_tek(L, lambda c: c["oran"] >= 3 and c["deger"] >= 0.95 and (not b or c["ad"] != b["ad"]), lambda c: c["tahmin"] * c["oran"])
          or en_iyi_tek(L, lambda c: c["oran"] >= 3 and (not b or c["ad"] != b["ad"]), lambda c: c["tahmin"] * c["oran"]))
     if b: y4b.append(b)
     if s: y4s.append(s)
@@ -342,21 +357,21 @@ sonuc_json = dict(
     mac_sayisi=incelenen, uygun_mac=incelenen - yetersiz, eslesen=len(IDD), min_n=MIN_N, uyari=uyari,
     kuponlar=[
         dict(ad="Banko kupon", tur="banko", secimler=[satir(c) for c in banko], **kupon_ozet(banko),
-             not_="Hem birebir aynı oranlı maçlarda hem de benzer oranlı geniş grupta en sık tutan seçimler; toplam oran 2,00 ve üzeri. Hepsinin birden tutması gerekir."),
+             not_="Oranı buna yakın geçmiş maçlarda en sık tutan, düşük oranlı seçimler; toplam oran 2,00 ve üzeri. Hepsinin birden tutması gerekir."),
         dict(ad="Sürpriz kupon", tur="sürpriz", secimler=[satir(c) for c in surpriz], **kupon_ozet(surpriz),
-             not_="Yüksek oranlı ve birebir aynı oranlı maçlarda beklenenden çok daha sık çıkmış sonuçlar; toplam oran 200 ve üzeri. Tutma ihtimali çok düşük."),
+             not_="Gerçekçi ihtimaline göre oranı en cömert görünen yüksek oranlı seçimler; toplam oran 200 ve üzeri. Tutma ihtimali çok düşük, eğlencelik."),
         dict(ad="Sistem 2-3-4-5-6", tur="sistem", secimler=[satir(c) for c in sistem], **sistem_ozet(sistem),
-             not_="Her biri yüksek oranlı 6 sürpriz seçimden 2'li, 3'lü, 4'lü, 5'li ve 6'lı bütün kombinasyonlar. 2 seçim tutsa bile bir kolon kazanır."),
+             not_="Gerçekçi ihtimaline göre oranı cömert görünen, her biri yüksek oranlı 6 seçimden 2'li, 3'lü, 4'lü, 5'li ve 6'lı bütün kombinasyonlar. 2 seçim tutsa bile bir kolon kazanır."),
         dict(ad="İki yarı 1.5 üst · Sistem 2-3", tur="sistem", secimler=[satir(c) for c in yari], **sistem_ozet(yari),
-             not_="Birebir aynı oranlı maçlarda hem ilk yarıda hem ikinci yarıda 2 ve üzeri gol en sık görülen 3 maç. 2'li ve 3'lü kombinasyonlar (4 kolon); 2 maç tutsa bir kolon kazanır."),
+             not_="Oranı buna yakın geçmiş maçlarda hem ilk yarıda hem ikinci yarıda 2 ve üzeri golün en sık görüldüğü 3 maç. 2'li ve 3'lü kombinasyonlar (4 kolon); 2 maç tutsa bir kolon kazanır."),
         dict(ad="İY/MS kuponu", tur="iyms", secimler=[satir(c) for c in iyms], **kupon_ozet(iyms),
-             not_="İlk yarı ile maç sonunun farklı bittiği (1/X, X/1, 2/X gibi) ve birebir aynı oranlı maçlarda beklenenden sık görülen sonuçlar. 3 maçın hepsinin tutması gerekir."),
+             not_="İlk yarı ile maç sonunun farklı bittiği (1/X, X/1, 2/X gibi) sonuçlardan oranı en cömert görünen 3 tanesi. Tutma ihtimali çok düşük. 3 maçın hepsinin tutması gerekir."),
         dict(ad="En başarılı 5'li", tur="banko", secimler=[satir(c) for c in enb], **kupon_ozet(enb),
              not_="Her maçın, oranı buna yakın geçmiş maçlarda en sık tutan bahsi (oran en az 1,30); en sık tutan 5 maç. Hepsinin birden tutması gerekir."),
         dict(ad="En yakın 4 maç: banko", tur="banko", secimler=[satir(c) for c in y4b], **kupon_ozet(y4b),
              not_="Günün ilk başlayan 4 maçında, yakın oranlı geçmiş maçlarda en sık tutan bahis (oran en az 1,20)."),
         dict(ad="En yakın 4 maç: sürpriz", tur="sürpriz", secimler=[satir(c) for c in y4s], **kupon_ozet(y4s),
-             not_="Günün ilk başlayan 4 maçında, geçmişte beklenenden sık görülmüş yüksek oranlı bahis (oran en az 3,00)."),
+             not_="Günün ilk başlayan 4 maçında, gerçekçi ihtimaline göre oranı en cömert görünen yüksek oranlı bahis (oran en az 3,00)."),
     ])
 json.dump(sonuc_json, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 print(json.dumps(dict(incelenen=incelenen, uygun=incelenen - yetersiz, aday=len(adaylar), uyari=uyari), ensure_ascii=False))
