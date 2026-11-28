@@ -23,9 +23,33 @@ document.addEventListener("click",e=>{
   try{document.execCommand("copy");ok()}catch(_){b.textContent="Kopyalanamadı"}t.remove()});
 });
 
+// ---- kombine kupon uyarısı: gerçekçi ihtimal düşükse açıkça söyle
+const ihUyari=ih=>ih>0&&ih<0.5?`<p class="knote warn">Bu kuponun hepsinin birden tutma ihtimali yaklaşık ${ih>=0.1?yuz(ih):`${say(Math.round(1/ih))}'da 1`}. ${ih<0.2?"Çok maçlı kuponlarda bir maç yatması çok olasıdır.":"Her maç eklendikçe ihtimal düşer."}</p>`:"";
+// ---- canlı oran: seçimin bültendeki şimdiki oranını getirir, değiştiyse yanında gösterir
+const BUL="https://sportsbookv2.iddaa.com/sportsbook/",EVC={};
+const evAl=id=>EVC[id]||(EVC[id]=fetch(BUL+"event/"+id).then(r=>r.ok?r.json():null).then(j=>j&&j.data).catch(()=>null));
+const canliAttr=(id,key,sov,n,oran)=>id&&key?` data-ev="${esc(id)}" data-k="${esc(key)}" data-sov="${esc(sov??"")}" data-n="${esc(n)}" data-oran="${oran}"`:"";
+function canli(kok){
+ for(const el of kok.querySelectorAll("[data-ev]:not([data-bakildi])")){
+  el.dataset.bakildi="1";
+  evAl(el.dataset.ev).then(d=>{
+   if(!d)return;
+   const m=(d.m||[]).find(m=>`${m.t}_${m.st}`===el.dataset.k&&String(m.sov??"")===el.dataset.sov);
+   const o=m&&(m.o||[]).find(x=>String(x.n)===el.dataset.n);
+   const eski=+el.dataset.oran,yeni=o&&o.odd;
+   const t=document.createElement("small");t.className="simdi";
+   if(!yeni)return;   // bulunamadıysa bir şey iddia etme
+   if(Math.abs(yeni-eski)<0.005){t.textContent="güncel";t.classList.add("ayni")}
+   else{t.textContent="şimdi "+o2(yeni);t.classList.add(yeni>eski?"cik":"dus")}
+   el.after(t);
+  });
+ }
+}
+(()=>{const st=document.createElement("style");st.textContent=".simdi{display:block;font:600 11px Barlow,sans-serif;text-align:right;margin-top:2px}.simdi.ayni{color:var(--soluk)}.simdi.dus{color:#b4231a}.simdi.cik{color:var(--saha)}@media(prefers-color-scheme:dark){.simdi.dus{color:#ff8a80}.simdi.cik{color:#7fd3a4}}.gi{font-weight:700}.karne td,.karne th{padding:6px 10px}.karne{border-collapse:collapse;width:100%;font-size:14px}.karne th{text-align:left;font-weight:600;color:var(--soluk)}.karne td.n,.karne th.n{text-align:right}.karne tr+tr td{border-top:1px solid var(--cizgi)}";document.head.appendChild(st)})();
+
 // ---- tek seçim satırı (kartların içinde)
-const secim=(s,ek)=>`<div class="sec${s.durum==="tuttu"?" ok":s.durum==="yatti"?" no":""}">
- <div class="r"><span class="m">${esc(s.mac)}</span><span class="o">${s.oran?o2(s.oran):"–"}</span></div>
+const secim=(s,ek,ca)=>`<div class="sec${s.durum==="tuttu"?" ok":s.durum==="yatti"?" no":""}">
+ <div class="r"><span class="m">${esc(s.mac)}</span><span class="o"><span${ca||""}>${s.oran?o2(s.oran):"–"}</span></span></div>
  <div class="i"><span>${esc(s.saat)}</span><span>${esc(s.lig)}</span>${s.mbs?`<span>MBS ${esc(s.mbs)}</span>`:""}</div>
  <span class="pk">${esc(s.secim)}</span>${rozet(s.durum)}${s.skor?`<div class="i">${esc(s.skor)}</div>`:""}${ek||""}
 </div>`;
@@ -33,7 +57,10 @@ const secim=(s,ek)=>`<div class="sec${s.durum==="tuttu"?" ok":s.durum==="yatti"?
 // ---- sitenin kupon kartı (günün kuponları ve geçmiş)
 function kart(k,tam){
  const S=k.secimler.map(s=>({...s,mac:s.idd_ad||s.mac}));
- const sec=S.map(s=>secim(s,tam&&s.n?`<div class="i">Aynı oranlı ${s.n} maçın ${s.hits} tanesinde oldu (${yuz(s.gecmis)}), yakın oranlarda ${yuz(s.ortalama)}</div><details><summary>Neden bu seçim?</summary><p>${esc(s.aciklama)}</p></details>`:"")).join("");
+ const simdi=Date.now()/1000;
+ const sec=S.map(s=>secim(s,tam&&s.n?`<div class="i"><span class="gi">Gerçekçi ihtimal ${yuz(s.ortalama)}</span> · bülten oranı ${yuz(1/s.oran)} diyor</div><details><summary>Neden bu seçim?</summary><p>${esc(s.aciklama)}</p><p>Birebir aynı oranlı ${s.n} maçın ${s.hits} tanesinde oldu (${yuz(s.gecmis)}); az sayıda maçtan çıktığı için şans payı yüksek, ihtimal olarak kullanılmıyor.</p></details>`:"",
+  tam&&s.durum!=="tuttu"&&s.durum!=="yatti"&&(!s.t||s.t>simdi)?canliAttr(s.idd_id,s.key,s.sov,s.sec,s.oran):"")).join("");
+ const ih=S.length&&S.every(s=>s.ortalama)?S.reduce((a,s)=>a*s.ortalama,1):(k.tutma_olasiligi||0);
  let alt="";
  if(k.tur==="sistem"){
   let sonuc="";
@@ -41,7 +68,7 @@ function kart(k,tam){
   const rows=tam&&k.tablo?k.tablo.filter(t=>t.tutan>=1).map(t=>`<tr><td>${t.tutan} maç tutarsa</td><td class="n">${yuz(t.olasilik)}</td><td class="n">${t.en_cok===null?"–":t.en_cok?(t.en_az===t.en_cok?say(t.en_az):say(t.en_az)+" – "+say(t.en_cok)):"0"}</td></tr>`).join(""):"";
   alt=`<div class="tot"><div><b>${k.kolon??"–"}</b><span>kolon, her kolona 1 birim</span></div><div><b>${S.length}</b><span>maç</span></div></div>${sonuc}${rows?`<div class="scroll knote"><table class="st"><thead><tr><th>Durum</th><th class="n">İhtimal</th><th class="n">Geri dönüş (birim)</th></tr></thead><tbody>${rows}</tbody></table></div>`:""}`;
  }else{
-  alt=`<div class="tot"><div><b>${k.toplam_oran?say(k.toplam_oran):"–"}</b><span>toplam oran</span></div>${tam?`<div><b>${yuz(k.tutma_olasiligi||0)}</b><span>tahmini tutma ihtimali</span></div>`:""}</div>`;
+  alt=`<div class="tot"><div><b>${k.toplam_oran?say(k.toplam_oran):"–"}</b><span>toplam oran</span></div>${tam?`<div><b>${yuz(ih)}</b><span>gerçekçi tutma ihtimali</span></div>`:""}</div>${tam&&k.durum!=="tuttu"&&k.durum!=="yatti"?ihUyari(ih):""}`;
  }
  const kopya=S.length?`<div class="kalt">${kopyaDugme(k.ad,S.map(s=>`${s.mac}: ${s.secim} (${o2(s.oran)})`))}</div>`:"";
  return `<article class="kart${RENK[k.tur]??" s"}"><header><h3>${esc(k.ad)}</h3>${rozet(k.durum)}${tam?`<p>${esc(k.not_)}</p>`:""}</header>${sec||'<p class="knote" style="padding-top:12px">Bu gün için bu kupona uygun maç bulunamadı.</p>'}${alt}${kopya}</article>`;
@@ -54,7 +81,8 @@ function gunGoster(iso){
  fetch(`arsiv/${iso}.json`,{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{
   $("kmeta").textContent=`${uzun(iso)} maçları. ${j.mac_sayisi} maç incelendi, ${j.uygun_mac??"?"} tanesinde aynı oranlı en az ${j.min_n??20} geçmiş maç vardı. Hazırlanma: ${j.hazirlandi}. Saatler Türkiye saatiyle.`;
   if(j.uyari){$("kuyari").textContent=j.uyari;$("kuyari").hidden=false}
-  $("kgrid").innerHTML=j.kuponlar.map(k=>kart(k,true)).join("");
+  $("kgrid").innerHTML=j.kuponlar.map(k=>kart(k,true)).join("")+`<p class="knote">Oranlar kupon hazırlanırken (${esc(j.hazirlandi)}) bültenden alındı. Başlamamış maçlarda oranın altında "şimdi" yazıyorsa bültendeki oran o arada değişmiştir; "güncel" yazıyorsa aynıdır.</p>`;
+  canli($("kgrid"));
  }).catch(()=>{$("kmeta").textContent="Bu günün kuponları henüz hazır değil."});
 }
 function gecmisGoster(){
@@ -71,7 +99,32 @@ function gecmisGoster(){
   h+=`<h3 class="gunbaslik">${esc(uzun(g.tarih))}</h3><div class="kgrid">${K.map(k=>kart(k,false)).join("")}</div>`;
  }
  if(bos&&G.length)h+=`<div class="empty" style="margin-top:14px">${FILTRE==="tutan"?"Henüz tutan kupon yok.":"Gösterilecek kupon yok."}</div>`;
- $("kgecmis").innerHTML=h;
+ $("kgecmis").innerHTML=`<div id="karne"></div>`+h;
+ karne();
+}
+// ---- karne: sitenin ihtimalleri gerçekte ne kadar tuttu (son 30 günün kayıtlı kuponlarından)
+let KARNE=null;
+function karne(){
+ const yaz=()=>{const el=$("karne");if(!el||!KARNE)return;
+  const S=KARNE;
+  if(S.length<1){el.innerHTML="";return}
+  const D=[[0,.3,"%30'un altı"],[.3,.5,"%30–50"],[.5,.7,"%50–70"],[.7,.85,"%70–85"],[.85,1.01,"%85 ve üstü"]];
+  const rows=D.map(([a,b,l])=>{const x=S.filter(s=>s.g>=a&&s.g<b);if(!x.length)return"";
+   const ort=f=>x.reduce((t,s)=>t+f(s),0)/x.length;
+   return `<tr><td>${l}</td><td class="n">${x.length}</td><td class="n">${yuz(ort(s=>s.g))}</td><td class="n"><b>${yuz(ort(s=>s.t))}</b></td><td class="n">${yuz(ort(s=>s.a))}</td></tr>`}).join("");
+  const top=S.filter(s=>s.t).length;
+  el.innerHTML=`<h3 class="gunbaslik">Karne: dediklerimiz ne kadar tuttu?</h3><p class="note" style="margin:0 0 10px;max-width:72ch">Son ${KARNE.gun} günde sitenin kuponlarındaki ${S.length} sonuçlanmış seçimin ${top} tanesi tuttu. Aşağıda seçimler sitenin verdiği gerçekçi ihtimale göre gruplandı. İki sütun birbirine yakınsa site doğru ölçüyor demektir. Gün sayısı az olduğunda rakamlar şanstan çok etkilenir; birkaç hafta sonra anlamlı hale gelir.</p><div class="scroll"><table class="karne"><thead><tr><th>Sitenin dediği</th><th class="n">Seçim</th><th class="n">Ortalama tahmin</th><th class="n">Gerçekte tutan</th><th class="n">Aynı oranlı % (eski ölçü)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+ };
+ if(KARNE){yaz();return}
+ const G=IDX.filter(g=>g.tarih<=BUGUN).map(g=>g.tarih).sort().reverse().slice(0,30);
+ Promise.all(G.map(t=>fetch(`arsiv/${t}.json`,{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null))).then(L=>{
+  const S=[],gor=new Set();
+  for(const j of L){if(!j)continue;for(const k of j.kuponlar)for(const s of k.secimler){
+   if((s.durum!=="tuttu"&&s.durum!=="yatti")||!s.ortalama)continue;
+   const id=(s.idd_ad||s.mac)+"|"+s.secim;if(gor.has(id))continue;gor.add(id);
+   S.push({g:s.ortalama,t:s.durum==="tuttu"?1:0,a:s.gecmis||0})}}
+  KARNE=S;KARNE.gun=G.length;yaz();
+ });
 }
 $("kgecmis").addEventListener("click",e=>{const b=e.target.closest("[data-f]");if(!b)return;FILTRE=b.dataset.f;gecmisGoster()});
 function sekmeler(){
@@ -93,40 +146,42 @@ fetch("arsiv/index.json",{cache:"no-store"}).then(r=>r.ok?r.json():[]).catch(()=
 let HV=null,TUR="guvenli";
 const num=v=>{const x=parseFloat(String(v).replace(",","."));return isFinite(x)?x:0};
 function havuzKart(baslik,alt,K,cls,ekNot){
- const top=K.reduce((a,c)=>a*c.oran,1),ih=K.reduce((a,c)=>a*c.tahmin,1),mbs=Math.max(...K.map(c=>c.mbc));
+ const top=K.reduce((a,c)=>a*c.oran,1),ih=K.reduce((a,c)=>a*c.base,1),mbs=Math.max(...K.map(c=>c.mbc));
  const sec=K.map(c=>secim({mac:c.m.ad,oran:c.oran,saat:c.m.saat,lig:c.m.lig,mbs:c.mbc,secim:c.ad},
-  `<div class="i">Yakın oranlı maçlarda ${yuz(c.base)} tuttu; aynı oranlı ${c.n} maçın ${c.hits} tanesinde oldu (${yuz(c.hits/c.n)}).</div><details><summary>Neden bu seçim?</summary><p>Bu maçın uluslararası 1-X-2 oranları ${c.m.oran.map(o2).join(" – ")}. Oranı buna yakın çok sayıda geçmiş maçta "${esc(c.ad)}" ${yuz(c.base)} oranında oldu; birebir aynı oranlı ${c.n} maçta ${c.hits} kez. İkisi harmanlanınca tahmini ihtimal ${yuz(c.tahmin)}. Bültendeki ${o2(c.oran)} oranı ise yaklaşık ${yuz(1/c.oran)} ihtimal veriyor. Bu oranlı maçlarda en sık skorlar: ${esc(c.m.skorlar)}.</p></details>`)).join("");
- return `<article class="kart${cls}"><header><h3>${esc(baslik)}</h3><p>${esc(alt)}</p></header>${sec}<div class="tot"><div><b>${say(top)}</b><span>toplam oran</span></div><div><b>${yuz(ih)}</b><span>tahmini tutma ihtimali</span></div></div>${ekNot||""}${K.length<mbs?`<p class="knote warn">Dikkat: bir maçın MBS'si ${mbs}; bültende oynamak için kuponda en az ${mbs} maç olmalı.</p>`:""}<p class="knote">Oranlar ${esc(HV.guncelleme)} itibarıyla bültenden alındı; oynamadan önce güncel oranı kontrol et. Bu bir tahmindir, kesinlik vermez.</p><div class="kalt">${kopyaDugme(baslik,K.map(c=>`${c.m.ad}: ${c.ad} (${o2(c.oran)})`))}</div></article>`;
+  `<div class="i"><span class="gi">Gerçekçi ihtimal ${yuz(c.base)}</span> · bülten oranı ${yuz(1/c.oran)} diyor</div><details><summary>Neden bu seçim?</summary><p>Bu maçın uluslararası 1-X-2 oranları ${c.m.oran.map(o2).join(" – ")}. Oranı buna yakın çok sayıda geçmiş maçta "${esc(c.ad)}" ${yuz(c.base)} oranında oldu. 2,5 yıllık testte gerçek sonuçlar bu yüzdeye uydu. Bültendeki ${o2(c.oran)} oranı yaklaşık ${yuz(1/c.oran)} ihtimal veriyor. Birebir aynı oranlı ${c.n} maçta ${c.hits} kez oldu (${yuz(c.hits/c.n)}); az maçtan çıktığı için şans payı yüksek. Bu oranlı maçlarda en sık skorlar: ${esc(c.m.skorlar)}.</p></details>`,
+  canliAttr(c.m.id,c.key,c.sov,c.sec,c.oran))).join("");
+ return `<article class="kart${cls}"><header><h3>${esc(baslik)}</h3><p>${esc(alt)}</p></header>${sec}<div class="tot"><div><b>${say(top)}</b><span>toplam oran</span></div><div><b>${yuz(ih)}</b><span>gerçekçi tutma ihtimali</span></div></div>${ihUyari(ih)}${ekNot||""}${K.length<mbs?`<p class="knote warn">Dikkat: bir maçın MBS'si ${mbs}; bültende oynamak için kuponda en az ${mbs} maç olmalı.</p>`:""}<p class="knote">Oranlar ${esc(HV.guncelleme)} itibarıyla bültenden alındı; oynamadan önce güncel oranı kontrol et. Bu bir tahmindir, kesinlik vermez.</p><div class="kalt">${kopyaDugme(baslik,K.map(c=>`${c.m.ad}: ${c.ad} (${o2(c.oran)})`))}</div></article>`;
 }
 function havuz(gs,min){
  const A=[],simdi=Date.now()/1000+300;
  HV.gunler.forEach((g,gi)=>{if(gs!=="hepsi"&&+gs!==gi)return;
   for(const s of g.secenekler){const m=g.maclar[s[0]];if(m.t<=simdi||s[2]<min)continue;
-   A.push({m,mid:gi+"|"+s[0],ad:s[1],oran:s[2],mbc:s[3],hits:s[4],n:s[5],base:s[6],tahmin:s[7],key:s[8],p:s[4]/s[5]})}});
+   A.push({m,mid:gi+"|"+s[0],ad:s[1],oran:s[2],mbc:s[3],hits:s[4],n:s[5],base:s[6],tahmin:s[6],key:s[8],sov:s[9],sec:s[10],p:s[4]/s[5]})}});
  return A;
 }
 
 // ---- en başarılı bahisler: her maç için yakın oranlı maçlarda en sık tutan bahis
 function enIyi(){
  if(!HV)return;
- const ayni=$("eisira").value==="ayni";
- const deger=c=>ayni?c.p:c.base,ikinci=c=>ayni?c.base:c.p;
+ const sira=$("eisira").value;
+ const deger=c=>sira==="ayni"?c.p:sira==="fark"?c.base-1/c.oran:c.base;
  const A=havuz($("eigun").value,num($("eimin").value)||1),best={};
- for(const c of A){const b=best[c.mid];if(!b||deger(c)>deger(b)||(deger(c)===deger(b)&&(ikinci(c)>ikinci(b)||(ikinci(c)===ikinci(b)&&c.n>b.n))))best[c.mid]=c}
- const R=Object.values(best).sort((a,b)=>deger(b)-deger(a)||ikinci(b)-ikinci(a)||b.n-a.n);
+ for(const c of A){const b=best[c.mid];if(!b||deger(c)>deger(b)||(deger(c)===deger(b)&&c.base>b.base))best[c.mid]=c}
+ const R=Object.values(best).sort((a,b)=>deger(b)-deger(a)||b.base-a.base);
  if(!R.length){$("eilist").innerHTML='<div class="empty">Bu ayarlarla maç yok. En az oranı düşür ya da günü değiştir.</div>';return}
  EIR=R;
- const b1=ayni?"Aynı oranlı geçmiş maçlarda":"Yakın oranlı geçmiş maçlarda",b2=ayni?"Yakın oranlarda":"Aynı oranlı maçlarda";
- $("eilist").innerHTML=`<p class="note" style="margin:0 0 8px">${R.length} maç; ${ayni?"aynı oranlı geçmiş maçlarda":"yakın oranlı geçmiş maçlarda"} en sık tutandan aşağı doğru. Bir maça dokunursan o oranlarla oynanmış geçmiş maçların sonuçları açılır.</p><div class="scroll"><table class="tablo eit"><thead><tr><th>Saat</th><th>Maç</th><th>En sık tutan bahis</th><th class="n">${b1}</th><th class="n gizle">${b2}</th><th class="n">Oran</th></tr></thead><tbody>${R.map((c,i)=>`<tr class="eirow" data-i="${i}" tabindex="0" aria-label="${esc(c.m.ad)}: geçmiş aynı oranlı maçları göster">
+ const acik={gercek:"gerçekçi ihtimali en yüksekten aşağı doğru",fark:"gerçekçi ihtimali bülten oranının verdiği ihtimalden en çok yüksek olandan aşağı doğru",ayni:"birebir aynı oranlı maçlardaki yüzdeye göre (şans payı yüksek, gerçekçi değil)"}[sira];
+ $("eilist").innerHTML=`<p class="note" style="margin:0 0 8px">${R.length} maç; ${acik}. Bir maça dokunursan o oranlarla oynanmış geçmiş maçların sonuçları açılır.</p><div class="scroll"><table class="tablo eit"><thead><tr><th>Saat</th><th>Maç</th><th>Bahis</th><th class="n">Gerçekçi ihtimal</th><th class="n gizle">Bülten oranının ihtimali</th><th class="n">Oran</th></tr></thead><tbody>${R.map((c,i)=>{const fark=c.base-1/c.oran;return `<tr class="eirow" data-i="${i}" tabindex="0" aria-label="${esc(c.m.ad)}: geçmiş maçları göster">
  <td class="saat">${esc(c.m.saat)}</td>
  <td><b>${esc(c.m.ad)}</b><small>${esc(c.m.lig)}</small></td>
  <td><span class="tag">${esc(c.ad)}</span></td>
- <td class="n"><div class="cub"><span style="width:${(deger(c)*100).toFixed(0)}%"></span></div><b class="yuzde">${yuz(deger(c))}</b>${ayni?`<small>${c.hits}/${c.n} maç</small>`:""}</td>
- <td class="n gizle">${yuz(ikinci(c))}${ayni?"":` <small class="ic">${c.hits}/${c.n}</small>`}</td>
- <td class="n"><b class="oranb">${o2(c.oran)}</b>${c.mbc>1?`<small>MBS ${c.mbc}</small>`:""}</td></tr>`).join("")}</tbody></table></div>`+
-  `<h3 class="gunbaslik">En sık tutan ${Math.min(5,R.length)} bahisle kupon</h3><div class="tekkart">${havuzKart(`${Math.min(5,R.length)} maçlık kupon`,"Yukarıdaki listenin ilk bahisleri. Hepsinin birden tutması gerekir.",R.slice(0,5),"","")}</div>`;
+ <td class="n"><div class="cub"><span style="width:${(c.base*100).toFixed(0)}%"></span></div><b class="yuzde">${yuz(c.base)}</b><small>aynı oranlı ${c.hits}/${c.n}</small></td>
+ <td class="n gizle">${yuz(1/c.oran)}<small>${fark>=0?"bizimki "+Math.round(fark*100)+" puan yüksek":"bülten "+Math.round(-fark*100)+" puan yüksek"}</small></td>
+ <td class="n"><b class="oranb"${canliAttr(c.m.id,c.key,c.sov,c.sec,c.oran)}>${o2(c.oran)}</b>${c.mbc>1?`<small>MBS ${c.mbc}</small>`:""}</td></tr>`}).join("")}</tbody></table></div>`+
+  `<h3 class="gunbaslik">Listenin ilk ${Math.min(5,R.length)} bahsiyle kupon</h3><div class="tekkart">${havuzKart(`${Math.min(5,R.length)} maçlık kupon`,"Yukarıdaki listenin ilk bahisleri. Hepsinin birden tutması gerekir.",R.slice(0,5),"","")}</div>`;
+ canli($("eilist"));
 }
-(()=>{const d=document.createElement("div");d.className="fl";d.innerHTML='<label class="lb" for="eisira">Sırala</label><select id="eisira"><option value="ayni">Aynı oranlı maçlardaki başarıya göre</option><option value="yakin">Yakın oranlı maçlardaki başarıya göre</option></select>';$("eimin").closest(".fl").after(d)})();
+(()=>{const d=document.createElement("div");d.className="fl";d.innerHTML='<label class="lb" for="eisira">Sırala</label><select id="eisira"><option value="gercek">Gerçekçi ihtimale göre</option><option value="fark">Bülten oranına göre en avantajlı</option><option value="ayni">Aynı oranlı maçlara göre (şans payı yüksek)</option></select>';$("eimin").closest(".fl").after(d)})();
 for(const k of ["eigun","eimin","eisira"])$(k).addEventListener("input",enIyi);
 // listedeki maça dokununca: o maçın oranlarıyla geçmiş maç aramasını aç
 let EIR=[];
@@ -136,7 +191,7 @@ function eiAc(tr){
  const o=c.m.oran.map(v=>Number(v).toFixed(2).replace(".",","));
  ["o1","ox","o2"].forEach((id,i)=>{const el=$(id);el.value=o[i];el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}))});
  const s=$("secili");
- s.innerHTML=`<b>${esc(c.m.ad)}</b><span class="note">${esc(c.m.lig)}, ${esc(c.m.saat)}</span><p>Bu maçın uluslararası oranı ${o.join(" – ")}. Aşağıda bu oranlarla oynanmış geçmiş maçların sonuçları var. Listede gördüğün bahis "${esc(c.ad)}": aynı oranlı ${c.n} maçın ${c.hits} tanesinde tuttu.</p>`;
+ s.innerHTML=`<b>${esc(c.m.ad)}</b><span class="note">${esc(c.m.lig)}, ${esc(c.m.saat)}</span><p>Bu maçın uluslararası oranı ${o.join(" – ")}. Aşağıda bu oranlarla oynanmış geçmiş maçların sonuçları var. Listede gördüğün bahis "${esc(c.ad)}": oranı buna yakın geçmiş maçlarda ${yuz(c.base)} tuttu (birebir aynı oranlı ${c.n} maçta ${c.hits} kez).</p>`;
  s.hidden=false;
  setTimeout(()=>document.getElementById("sonuc").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"}),250);
 }
@@ -158,13 +213,13 @@ function olustur(karistir){
   for(const c of liste.map(c=>[puan(c),c]).sort((a,b)=>b[0]-a[0]).map(x=>x[1])){
    if(kul.has(c.mid)||(!bt&&(tur[c.key]||0)>=2))continue;out.push(c);kul.add(c.mid);tur[c.key]=(tur[c.key]||0)+1;if(out.length===n)break}
   return out};
- let K=TUR==="surpriz"?sec(A.filter(c=>c.hits>=4&&c.tahmin>c.base)):sec(A);
+ let K=TUR==="surpriz"?sec(A.filter(c=>c.hits>=3&&c.base*c.oran>=0.95)):sec(A);
  if(K.length<n)K=sec(A);
  if(!K.length){$("ksonuc").innerHTML=`<div class="empty">${bt?`"${esc(bt)}" için bu ayarlarla uygun maç bulunamadı. En az oranı düşür, "Bugün ve yarın"ı seç ya da başka bir bahis türü dene.`:`Bu ayarlarla uygun seçim bulunamadı. En az oranı düşür ya da "Bugün ve yarın"ı seç.`}</div>`;return}
  const macSay=new Set(A.map(c=>c.mid)).size;
  $("ksonuc").innerHTML=`<div class="tekkart">${havuzKart(`${TUR==="surpriz"?"Sürpriz":"Güvenli"} kupon, ${K.length} maç`,`${bt?`Hepsi "${bt}". `:""}${macSay} uygun maç arasından, her seçimin oranı en az ${o2(min)}.`,K,TUR==="surpriz"?" s":"",
   K.length<n?`<p class="knote warn">İstediğin ${n} maç için yeterli seçim yok; ${K.length} maçlık kupon hazırlandı. En az oranı düşürmeyi${bt?" ya da başka bir bahis türünü":""} dene.</p>`:"")}<button type="button" class="ikincil" id="kbaska">Başka bir kupon öner</button></div>`;
- $("kbaska").addEventListener("click",()=>olustur(true));
+ $("kbaska").addEventListener("click",()=>olustur(true));canli($("ksonuc"));
 }
 $("kyap").addEventListener("click",()=>olustur(false));
 // bahis türü seçimi: sitedeki havuzda bulunan bütün bahisler, gruplara ayrılmış
@@ -192,10 +247,10 @@ function yakin4(){
   const L=A.filter(c=>c.mid===id);
   const b=L.filter(c=>c.oran>=1.2).sort((x,y)=>y.base-x.base||y.p-x.p)[0];
   const L2=L.filter(c=>c.oran>=3&&(!b||c.ad!==b.ad));
-  const s=L2.filter(c=>c.hits>=4&&c.tahmin>c.base).sort((x,y)=>deger(y)-deger(x))[0]||L2.sort((x,y)=>deger(y)-deger(x))[0];
+  const s=L2.sort((x,y)=>deger(y)-deger(x))[0];
   if(b)B.push(b);if(s)S.push(s);
  }
- $("k4sonuc").innerHTML=`<div class="kgrid">${B.length?havuzKart(`Banko, en yakın ${B.length} maç`,"Her maçın, oranı buna yakın geçmiş maçlarda en sık tutan bahsi. Oran en az 1,20.",B,"",""):""}${S.length?havuzKart(`Sürpriz, en yakın ${S.length} maç`,"Her maçın, geçmişte beklenenden sık görülmüş yüksek oranlı bahsi. Oran en az 3,00.",S," s",""):""}</div>`;
+ $("k4sonuc").innerHTML=`<div class="kgrid">${B.length?havuzKart(`Banko, en yakın ${B.length} maç`,"Her maçın, oranı buna yakın geçmiş maçlarda en sık tutan bahsi. Oran en az 1,20.",B,"",""):""}${S.length?havuzKart(`Sürpriz, en yakın ${S.length} maç`,"Her maçın, gerçekçi ihtimaline göre oranı en cömert görünen yüksek oranlı bahsi. Oran en az 3,00. Tutma ihtimali çok düşük.",S," s",""):""}</div>`;canli($("k4sonuc"));
 }
 $("k4yap").addEventListener("click",yakin4);
 
