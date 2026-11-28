@@ -1,0 +1,65 @@
+name: Hızlı sonuç güncelleme
+
+on:
+  schedule:
+    - cron: "17,47 * * * *"   # her 30 dakikada bir: biten maçların sonuçlarını kuponlara işler
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  sonuc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      degisti: ${{ steps.kaydet.outputs.degisti }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Gerekli paketler
+        run: pip install pandas numpy
+      - name: Biten maçların sonuçlarını işle
+        run: python3 scripts/arsiv.py veri/kapanis_maclar.csv site/arsiv
+      - name: Değiştiyse kaydet
+        id: kaydet
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/arsiv
+          if git diff --cached --quiet; then echo "degisti=0" >> "$GITHUB_OUTPUT"; else
+            git commit -m "Maç sonuçları işlendi"
+            git pull --rebase origin main
+            git push origin HEAD:main
+            echo "degisti=1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Sitenin diğer veri dosyalarını al
+        if: steps.kaydet.outputs.degisti == '1'
+        run: |
+          for f in maclar.json havuz.json yaklasan.json; do
+            curl -fsSL "https://bdrnagdl.github.io/oran-motoru/$f" -o "site/$f"
+          done
+      - uses: actions/configure-pages@v5
+        if: steps.kaydet.outputs.degisti == '1'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.kaydet.outputs.degisti == '1'
+        with:
+          path: site
+  yayinla:
+    needs: sonuc
+    if: needs.sonuc.outputs.degisti == '1'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
