@@ -17,9 +17,18 @@ for ISO in "$BUGUN_ISO" "$YARIN_ISO"; do
     "veri/bulten_$ISO.json" "veri/havuz_$ISO.json"
 done
 
-# Günün kuponları o gün sabah 10:37'deki çalışmada BİR KEZ kaydedilir (maç saatine en yakın oranlarla) ve
-# bir daha hiç değişmez. Saatlik çalışmalar yalnızca listeleri, "kupon oluştur" havuzunu ve sonuçları günceller.
-if [ "$(date +%H)" -ge 10 ]; then
+# Günün kuponları, günün ilk uygun maçına 95 dakikadan az kaldığında (yaklaşık 1 saat önce) BİR KEZ kaydedilir
+# ve bir daha hiç değişmez. Saatlik çalışmalar yalnızca listeleri, "kupon oluştur" havuzunu ve sonuçları günceller.
+YAYIN=$(python3 - "veri/uygun_$BUGUN_ISO.json" <<'PYEOF'
+import sys, json, datetime as dt
+simdi = dt.datetime.now(dt.timezone.utc)
+t = [dt.datetime.fromisoformat(x["utc"]).replace(tzinfo=dt.timezone.utc) for x in json.load(open(sys.argv[1], encoding="utf-8"))]
+t = [x for x in t if x > simdi]
+print(1 if t and (min(t) - simdi).total_seconds() <= 95 * 60 else 0)
+PYEOF
+)
+echo "Bugünün kuponunu yayınlama zamanı mı: $YAYIN"
+if [ "$YAYIN" = "1" ]; then
   python3 scripts/arsiv.py veri/kapanis_maclar.csv site/arsiv "veri/kupon_$BUGUN_ISO.json" 0
 else
   python3 scripts/arsiv.py veri/kapanis_maclar.csv site/arsiv
