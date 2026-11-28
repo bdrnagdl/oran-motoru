@@ -83,7 +83,7 @@ function gunGoster(iso){
   if(j.uyari){$("kuyari").textContent=j.uyari;$("kuyari").hidden=false}
   $("kgrid").innerHTML=j.kuponlar.map(k=>kart(k,true)).join("")+`<p class="knote">Oranlar kupon hazırlanırken (${esc(j.hazirlandi)}) bültenden alındı. Başlamamış maçlarda oranın altında "şimdi" yazıyorsa bültendeki oran o arada değişmiştir; "güncel" yazıyorsa aynıdır.</p>`;
   canli($("kgrid"));
- }).catch(()=>{$("kmeta").textContent="Bu günün kuponları henüz hazır değil."});
+ }).catch(()=>{$("kmeta").textContent=iso===BUGUN?"Bugünün kuponları henüz yayınlanmadı. Site kuponları günün ilk maçından yaklaşık 1 saat önce bir kez yayınlar; yayınlanan kupon bir daha değişmez.":"Bu günün kuponları henüz hazır değil."});
 }
 function gecmisGoster(){
  $("kgrid").hidden=true;$("kuyari").hidden=true;$("kgecmis").hidden=false;
@@ -129,7 +129,7 @@ function karne(){
 $("kgecmis").addEventListener("click",e=>{const b=e.target.closest("[data-f]");if(!b)return;FILTRE=b.dataset.f;gecmisGoster()});
 function sekmeler(){
  const T=[];
- if(IDX.some(g=>g.tarih===BUGUN))T.push([BUGUN,`Bugün, ${kisa(BUGUN)}`]);
+ T.push([BUGUN,`Bugün, ${kisa(BUGUN)}`]);   // yayınlanmadıysa "henüz yayınlanmadı" yazar
  if(IDX.some(g=>g.tarih===YARIN))T.push([YARIN,`Yarın, ${kisa(YARIN)}`]);
  T.push(["gecmis","Geçmiş kuponlar"]);
  $("ktabs").innerHTML=T.map(([v,l],i)=>`<button type="button" role="tab" class="tab${i===0?" on":""}" data-v="${v}" aria-selected="${i===0}">${esc(l)}</button>`).join("");
