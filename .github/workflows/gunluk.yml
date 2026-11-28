@@ -2,8 +2,7 @@ name: Günlük kupon ve site güncelleme
 
 on:
   schedule:
-    - cron: "37 18 * * *"   # her gün 21:37 (Türkiye saati): yarının kuponları
-    - cron: "37 6 * * *"    # her gün 09:37 (Türkiye saati): sonuçlar ve güncel oranlar
+    - cron: "37 * * * *"    # her saat başı +37 dk: oranlar maç saatine yakın güncellensin (bugünün kayıtlı kuponu değişmez)
   workflow_dispatch: {}      # elle de çalıştırılabilir
 
 permissions:
